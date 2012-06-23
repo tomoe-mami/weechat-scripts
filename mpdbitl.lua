@@ -13,7 +13,7 @@ require("socket")
 mpdbitl_config =
 {
    enable         = true,
-   color          = "yellow,red",
+   color          = "yellow",
    hostname       = "localhost",
    port           = 6600,
    password       = nil,
@@ -38,7 +38,9 @@ function mpdbitl_config_init()
    mpdbitl_config_file = 
       weechat.config_new(mpdbitl_config_file_name, "mpdbitl_config_reload", "")
 
-   if mpdbitl_config_file == "" then return end
+   if mpdbitl_config_file == "" then
+      return
+   end
 
    local general_section =
       weechat.config_new_section(
@@ -66,7 +68,7 @@ function mpdbitl_config_init()
          "notification_color", "color",
          "Color for error notification",
          "", 0, 0,
-         "yellow,red", "yellow,red",
+         "yellow", "yellow",
          0, "", "", "", "", "", "")
 
    local section_mpd =
@@ -101,7 +103,7 @@ function mpdbitl_config_init()
       weechat.config_new_option(
          mpdbitl_config_file, section_mpd,
          "password", "string",
-         "Password used to authenticate to mpd server",
+         "Password used to authenticate to MPD server",
          "", 0, 0,
          "", "", 1,
          "", "", "", "", "", "")
@@ -152,7 +154,7 @@ function mpdbitl_config_init()
    mpdbitl_config.format_playing =
       weechat.config_new_option(
          mpdbitl_config_file, section_bitlbee,
-         "format_playing", "string", "Status format when mpd is playing a song",
+         "format_playing", "string", "Status format when MPD is playing a song",
          "", 0, 0,
          "mpdbitl: {{artist}} - {{title}}",
          "mpdbitl: {{artist}} - {{title}}",
@@ -162,7 +164,7 @@ function mpdbitl_config_init()
    mpdbitl_config.format_paused =
       weechat.config_new_option(
          mpdbitl_config_file, section_bitlbee,
-         "format_paused", "string", "Status format when mpd is paused",
+         "format_paused", "string", "Status format when MPD is paused",
          "", 0, 0,
          "mpdbitl (paused): {{artist}} - {{title}}",
          "mpdbitl (paused): {{artist}} - {{title}}",
@@ -172,7 +174,7 @@ function mpdbitl_config_init()
    mpdbitl_config.format_stopped =
       weechat.config_new_option(
          mpdbitl_config_file, section_bitlbee,
-         "format_stopped", "string", "status format when mpd is stopped",
+         "format_stopped", "string", "Status format when MPD is stopped",
          "", 0, 0,
          "mpdbitl (not playing)",
          "mpdbitl (not playing)",
@@ -305,7 +307,9 @@ function mpdbitl_fetch_all_responses()
    local complete, key, value
    repeat
       key, value, complete, mpdbitl_error = mpdbitl_receive_single_response()
-      if key then result[key] = value end
+      if key then
+         result[key] = value
+      end
    until complete
 
    if mpdbitl_error.message then
@@ -335,7 +339,20 @@ end
 
 function mpdbitl_get_current_song()
    if mpdbitl_send_command("currentsong") then
-      return mpdbitl_fetch_all_responses()
+      local song = mpdbitl_fetch_all_responses()
+      if song.time then
+         local duration = tonumber(song.time)
+         local hours    = math.floor(duration / 3600) % 24
+         local minutes  = math.floor(duration / 60) % 60
+         local seconds  = duration % 60
+
+         song.time = string.format("%02d:%02d", minutes, seconds)
+         if hours > 0 then
+            song.time = string.format("%02d:%s", hours, song.time)
+         end
+      end
+
+      return song
    else
       return false
    end
@@ -348,9 +365,14 @@ function mpdbitl_format_status_text(format, data)
       return ""
    end
 
-   for key,value in pairs(data) do
-      local token = "{{" .. key .. "}}"
-      result = result:gsub(token, value)
+   for key,_ in format:gmatch("{{([^}]+)}}") do
+      local replacement = ""
+
+      if data[key] then
+         replacement = data[key]
+      end
+
+      result = result:gsub("{{" .. key .. "}}", replacement)
    end
 
    result = result:gsub("'", "\\'")
@@ -360,19 +382,37 @@ end
 function mpdbitl_change_bitlbee_status(data, remaining_calls)
 
    local enabled = weechat.config_boolean(mpdbitl_config.enable)
-   if not enabled then return weechat.WEECHAT_RC_OK end
+   if not enabled then
+      return weechat.WEECHAT_RC_OK
+   end
 
-   local win_buffer = weechat.info_get(
-                        "irc_buffer",
-                        weechat.config_string(mpdbitl_config.network))
+   local color    = weechat.color(weechat.config_color(mpdbitl_config.color))
+   local network  = weechat.config_string(mpdbitl_config.network)
+   local buffer   = weechat.info_get("irc_buffer", network)
 
-   if win_buffer == "" then return weechat.WEECHAT_RC_OK end
+   if buffer == "" then
+      weechat.print(
+         "",
+         string.format("mpdbitl\t%sNo buffer for %s", color, network)
+      )
+
+      return weechat.WEECHAT_RC_OK
+   end
+
+   local bitlbot = weechat.config_string(mpdbitl_config.bitlbot)
+   if weechat.info_get("irc_is_nick", bitlbot) ~= "1" then
+      weechat.print(
+         "",
+         string.format("mpdbitl\t%sInvalid bitlbot handler: %s", color, bitlbot)
+      )
+
+      return weechat.WEECHAT_RC_OK
+   end
 
    if mpdbitl_connect() then
 
       local server_status  = mpdbitl_get_server_status()
       local irc_command    = nil
-      local bitlbot        = weechat.config_string(mpdbitl_config.bitlbot)
       local account_id     = weechat.config_integer(mpdbitl_config.account_id)
 
       if server_status.state == "stop" and mpdbitl_song_id then
