@@ -450,7 +450,7 @@ function mpdbitl_change_bitlbee_status(data, remaining_calls)
       mpdbitl_disconnect()
 
       if irc_command and #irc_command > 0 then
-         weechat.command(win_buffer, irc_command)
+         weechat.command(buffer, irc_command)
       end
 
       return weechat.WEECHAT_RC_OK
