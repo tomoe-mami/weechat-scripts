@@ -13,12 +13,12 @@ require("socket")
 mpdbitl_config =
 {
    enable         = true,
-   color          = "yellow",
    hostname       = "localhost",
    port           = 6600,
    password       = nil,
    timeout        = 1,
    network        = "localhost",
+   channel        = "&bitlbee",
    bitlbot        = "root",
    account_id     = 0,
    format_playing = "",
@@ -60,15 +60,6 @@ function mpdbitl_config_init()
          "Enable mpdbitl",
          "", 0, 0,
          "on", "on",
-         0, "", "", "", "", "", "")
-
-   mpdbitl_config.color =
-      weechat.config_new_option(
-         mpdbitl_config_file, general_section,
-         "notification_color", "color",
-         "Color for error notification",
-         "", 0, 0,
-         "yellow", "yellow",
          0, "", "", "", "", "", "")
 
    local section_mpd =
@@ -133,6 +124,14 @@ function mpdbitl_config_init()
          "network", "string", "Network id for bitlbee server",
          "", 0, 0,
          "localhost", "localhost", 0,
+         "", "", "", "", "", "")
+
+   mpdbitl_config.channel =
+      weechat.config_new_option(
+         mpdbitl_config_file, section_bitlbee,
+         "channel", "string", "Bitlbee main channel",
+         "", 0, 0,
+         "&bitlbee", "&bitlbee", 0,
          "", "", "", "", "", "")
 
    mpdbitl_config.account_id =
@@ -201,16 +200,11 @@ function mpdbitl_connect()
 
    local hostname = weechat.config_string(mpdbitl_config.hostname)
    local port     = weechat.config_integer(mpdbitl_config.port)
-   local color    = weechat.color(weechat.config_color(mpdbitl_config.color))
 
    if not mpdbitl_sock:connect(hostname, port) then
       weechat.print(
          "",
-         string.format(
-            "mpdbitl\t%sCould not connect to %s:%d",
-            color,
-            hostname,
-            port)
+         string.format("mpdbitl\tCould not connect to %s:%d", hostname, port)
       )
       return false
    end
@@ -219,7 +213,7 @@ function mpdbitl_connect()
    if not line:match("^OK MPD") then
       weechat.print(
          "",
-         string.format("mpdbitl\t%sUnknown welcome message: %s", color, line)
+         string.format("mpdbitl\tUnknown welcome message: %s", line)
       )
       return false
    else
@@ -233,10 +227,7 @@ function mpdbitl_connect()
             if mpdbitl_error.message then
                weechat.print(
                   "",
-                  string.format(
-                     "mpdbitl\t%sMPD error: %s",
-                     color,
-                     mpdbitl_error.message)
+                  string.format("mpdbitl\tMPD error: %s", mpdbitl_error.message)
                )
                return false
             end
@@ -313,12 +304,10 @@ function mpdbitl_fetch_all_responses()
    until complete
 
    if mpdbitl_error.message then
-      local color = weechat.color(weechat.config_color(mpdbitl_config.color))
       weechat.print(
          "",
          string.format(
-            "mpdbitl\t%sMPD Error %s (%s @ %u): %s",
-            color,
+            "mpdbitl\tMPD Error %s (%s @ %u): %s",
             mpdbitl_error.code,
             mpdbitl_error.command,
             mpdbitl_error.index,
@@ -358,25 +347,15 @@ function mpdbitl_get_current_song()
    end
 end
 
-function mpdbitl_format_status_text(format, data)
-   local result = format
-
-   if not result or not data or #result < 1 or type(data) ~= "table" then
+function mpdbitl_format_status_text(text, replacement)
+   if not text or not replacement or #text < 1 or type(replacement) ~= "table" then
       return ""
    end
 
-   for key,_ in format:gmatch("{{([^}]+)}}") do
-      local replacement = ""
+   text = text:gsub("{{([^}]+)}}", replacement)
+   text = text:gsub("'", "\\'")
 
-      if data[key] then
-         replacement = data[key]
-      end
-
-      result = result:gsub("{{" .. key .. "}}", replacement)
-   end
-
-   result = result:gsub("'", "\\'")
-   return result
+   return text
 end
 
 function mpdbitl_change_bitlbee_status(data, remaining_calls)
@@ -386,14 +365,15 @@ function mpdbitl_change_bitlbee_status(data, remaining_calls)
       return weechat.WEECHAT_RC_OK
    end
 
-   local color    = weechat.color(weechat.config_color(mpdbitl_config.color))
    local network  = weechat.config_string(mpdbitl_config.network)
-   local buffer   = weechat.info_get("irc_buffer", network)
+   local channel  = weechat.config_string(mpdbitl_config.channel)
+   local buf_id   = network .. "." .. channel
+   local buffer   = weechat.buffer_search("irc", buf_id)
 
    if buffer == "" then
       weechat.print(
          "",
-         string.format("mpdbitl\t%sNo buffer for %s", color, network)
+         string.format("mpdbitl\tNo buffer for %s", buf_id)
       )
 
       return weechat.WEECHAT_RC_OK
@@ -403,7 +383,7 @@ function mpdbitl_change_bitlbee_status(data, remaining_calls)
    if weechat.info_get("irc_is_nick", bitlbot) ~= "1" then
       weechat.print(
          "",
-         string.format("mpdbitl\t%sInvalid bitlbot handler: %s", color, bitlbot)
+         string.format("mpdbitl\tInvalid bitlbot handler: %s", bitlbot)
       )
 
       return weechat.WEECHAT_RC_OK
