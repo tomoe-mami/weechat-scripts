@@ -21,7 +21,6 @@ mpdbitl_config =
    network        = "localhost",
    bitlbot        = "root",
    account_id     = 0,
-   color          = "yellow,red",
    format_playing = "",
    format_paused  = "",
    format_stopped = ""
@@ -181,7 +180,7 @@ function mpdbitl_config_init()
          "", "", "", "", "", "")
 end
 
-function mpdbitl_config_reload_cb(data, config_file)
+function mpdbitl_config_reload(data, config_file)
    return weechat.config_reload(config_file)
 end
 
