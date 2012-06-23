@@ -52,7 +52,7 @@ function mpdbitl_config_init()
       return
    end
 
-   local enable_mpdbitl =
+   mpdbitl_config.enable =
       weechat.config_new_option(
          mpdbitl_config_file, general_section,
          "enable", "boolean",
@@ -61,7 +61,7 @@ function mpdbitl_config_init()
          "on", "on",
          0, "", "", "", "", "", "")
 
-   local color =
+   mpdbitl_config.color =
       weechat.config_new_option(
          mpdbitl_config_file, general_section,
          "notification_color", "color",
@@ -81,7 +81,7 @@ function mpdbitl_config_init()
       return
    end
 
-   local mpd_hostname =
+   mpdbitl_config.hostname =
       weechat.config_new_option(
          mpdbitl_config_file, section_mpd,
          "hostname", "string",
@@ -90,7 +90,7 @@ function mpdbitl_config_init()
          "localhost", "localhost",
          0, "", "", "", "", "", "")
 
-   local mpd_port =
+   mpdbitl_config.port =
       weechat.config_new_option(
          mpdbitl_config_file, section_mpd,
          "port", "integer", "Port used by MPD server",
@@ -98,7 +98,7 @@ function mpdbitl_config_init()
          6600, 6600, 0,
          "", "", "", "", "", "")
 
-   local mpd_password =
+   mpdbitl_config.password =
       weechat.config_new_option(
          mpdbitl_config_file, section_mpd,
          "password", "string",
@@ -107,7 +107,7 @@ function mpdbitl_config_init()
          "", "", 1,
          "", "", "", "", "", "")
 
-   local mpd_timeout =
+   mpdbitl_config.timeout =
       weechat.config_new_option(
          mpdbitl_config_file, section_mpd,
          "timeout", "integer", "Connection timeout (in seconds)",
@@ -126,7 +126,7 @@ function mpdbitl_config_init()
       return
    end
 
-   local bitlbee_network =
+   mpdbitl_config.network =
       weechat.config_new_option(
          mpdbitl_config_file, section_bitlbee,
          "network", "string", "Network id for bitlbee server",
@@ -134,7 +134,7 @@ function mpdbitl_config_init()
          "localhost", "localhost", 0,
          "", "", "", "", "", "")
 
-   local bitlbee_account =
+   mpdbitl_config.account_id =
       weechat.config_new_option(
          mpdbitl_config_file, section_bitlbee,
          "account", "integer", "Bitlbee account id",
@@ -142,7 +142,7 @@ function mpdbitl_config_init()
          0, 0, 0,
          "", "", "", "", "", "")
 
-   local bitlbee_bot =
+   mpdbitl_config.bitlbot =
       weechat.config_new_option(
          mpdbitl_config_file, section_bitlbee,
          "bitlbot", "string", "Bitlbee bot handle name",
@@ -150,7 +150,7 @@ function mpdbitl_config_init()
          "root", "root", 0,
          "", "", "", "", "", "")
 
-   local format_playing =
+   mpdbitl_config.format_playing =
       weechat.config_new_option(
          mpdbitl_config_file, section_bitlbee,
          "format_playing", "string", "Status format when mpd is playing a song",
@@ -160,7 +160,7 @@ function mpdbitl_config_init()
          0,
          "", "", "", "", "", "")
 
-   local format_paused =
+   mpdbitl_config.format_paused =
       weechat.config_new_option(
          mpdbitl_config_file, section_bitlbee,
          "format_paused", "string", "Status format when mpd is paused",
@@ -170,7 +170,7 @@ function mpdbitl_config_init()
          0,
          "", "", "", "", "", "")
 
-   local format_stopped =
+   mpdbitl_config.format_stopped =
       weechat.config_new_option(
          mpdbitl_config_file, section_bitlbee,
          "format_stopped", "string", "status format when mpd is stopped",
@@ -179,21 +179,6 @@ function mpdbitl_config_init()
          "mpdbitl (not playing)",
          0,
          "", "", "", "", "", "")
-
-   mpdbitl_config.enable         = weechat.config_boolean(enable_mpdbitl)
-   mpdbitl_config.color          = weechat.color(weechat.config_color(color))
-   mpdbitl_config.hostname       = weechat.config_string(mpd_hostname)
-   mpdbitl_config.port           = weechat.config_integer(mpd_port)
-   mpdbitl_config.password       = weechat.config_string(mpd_password)
-   mpdbitl_config.timeout        = weechat.config_integer(mpd_timeout)
-   mpdbitl_config.network        = weechat.config_string(bitlbee_network)
-   mpdbitl_config.account_id     = weechat.config_integer(bitlbee_account)
-   mpdbitl_config.bitlbot        = weechat.config_string(bitlbee_bot)
-   mpdbitl_config.format_playing = weechat.config_string(format_playing)
-   mpdbitl_config.format_stopped = weechat.config_string(format_stopped)
-   mpdbitl_config.format_paused  = weechat.config_string(format_paused)
-
-   weechat.print("", mpdbitl_config.network)
 end
 
 function mpdbitl_config_reload_cb(data, config_file)
@@ -211,16 +196,20 @@ end
 function mpdbitl_connect()
 
    mpdbitl_sock = socket.tcp()
-   mpdbitl_sock:settimeout(mpdbitl_config.timeout, "t")
+   mpdbitl_sock:settimeout(weechat.config_integer(mpdbitl_config.timeout), "t")
 
-   if not sock:connect(mpdbitl_config.hostname, mpdbitl_config.port) then
+   local hostname = weechat.config_string(mpdbitl_config.hostname)
+   local port     = weechat.config_integer(mpdbitl_config.port)
+   local color    = weechat.color(weechat.config_color(mpdbitl_config.color))
+
+   if not mpdbitl_sock:connect(hostname, port) then
       weechat.print(
          "",
          string.format(
             "mpdbitl\t%sCould not connect to %s:%d",
-            mpdbitl_config.color,
-            mpdbitl_config.hostname,
-            mpdbitl_config.port)
+            color,
+            hostname,
+            port)
       )
       return false
    end
@@ -229,16 +218,14 @@ function mpdbitl_connect()
    if not line:match("^OK MPD") then
       weechat.print(
          "",
-         string.format(
-            "mpdbitl\t%sUnknown welcome message: %s",
-            mpdbitl_config.color,
-            line)
+         string.format("mpdbitl\t%sUnknown welcome message: %s", color, line)
       )
       return false
    else
-      if mpdbitl_config.password and #mpdbitl_config.password > 0 then
+      local password = weechat.config_string(mpdbitl_config.password)
+      if password and #password > 0 then
 
-         local command = "password " .. mpdbitl_escape_arg(mpdbitl_config.password)
+         local command = "password " .. mpdbitl_escape_arg(password)
 
          if mpdbitl_send_command(command) then
             local response = mpdbitl_fetch_all_responses()
@@ -247,7 +234,7 @@ function mpdbitl_connect()
                   "",
                   string.format(
                      "mpdbitl\t%sMPD error: %s",
-                     mpdbitl_config.color,
+                     color,
                      mpdbitl_error.message)
                )
                return false
@@ -272,7 +259,7 @@ function mpdbitl_escape_arg(arg)
 end
 
 function mpdbitl_disconnect()
-   send_mpd_command("close")
+   mpdbitl_send_command("close")
    mpdbitl_sock:close()
 end
 
@@ -323,11 +310,12 @@ function mpdbitl_fetch_all_responses()
    until complete
 
    if mpdbitl_error.message then
+      local color = weechat.color(weechat.config_color(mpdbitl_config.color))
       weechat.print(
          "",
          string.format(
             "mpdbitl\t%sMPD Error %s (%s @ %u): %s",
-            mpdbitl_config.color,
+            color,
             mpdbitl_error.code,
             mpdbitl_error.command,
             mpdbitl_error.index,
@@ -372,10 +360,12 @@ end
 
 function mpdbitl_change_bitlbee_status(data, remaining_calls)
 
-   if not mpdbitl_config.enable then return weechat.WEECHAT_RC_OK end
+   local enabled = weechat.config_boolean(mpdbitl_config.enable)
+   if not enabled then return weechat.WEECHAT_RC_OK end
 
-   local win_buffer  = weechat.info_get("irc_buffer", mpdbitl_config.network)
-   weechat.print("", mpdbitl_config.network)
+   local win_buffer = weechat.info_get(
+                        "irc_buffer",
+                        weechat.config_string(mpdbitl_config.network))
 
    if win_buffer == "" then return weechat.WEECHAT_RC_OK end
 
@@ -383,15 +373,17 @@ function mpdbitl_change_bitlbee_status(data, remaining_calls)
 
       local server_status  = mpdbitl_get_server_status()
       local irc_command    = nil
+      local bitlbot        = weechat.config_string(mpdbitl_config.bitlbot)
+      local account_id     = weechat.config_integer(mpdbitl_config.account_id)
 
       if server_status.state == "stop" and mpdbitl_song_id then
 
          mpdbitl_song_id = nil
          irc_command = string.format(
                         mpdbitl_status_command,
-                        mpdbitl_config.bitlbot,
-                        mpdbitl_config.account_id,
-                        mpdbitl_config.format_stopped)
+                        bitlbot,
+                        account_id,
+                        weechat.config_string(mpdbitl_config.format_stopped))
 
       elseif server_status.songid ~= mpdbitl_song_id then
 
@@ -404,13 +396,14 @@ function mpdbitl_change_bitlbee_status(data, remaining_calls)
             format = mpdbitl_config.format_paused
          end
 
-         local song        = mpdbitl_get_current_song()
-         local status_text = mpdbitl_format_status_text(format, song)
+         local status_text = mpdbitl_format_status_text(
+                              weechat.config_string(format),
+                              mpdbitl_get_current_song())
 
          irc_command = string.format(
                         mpdbitl_status_command,
-                        mpdbitl_config.bitlbot,
-                        mpdbitl_config.account_id,
+                        bitlbot,
+                        account_id,
                         status_text)
 
       end
@@ -418,7 +411,7 @@ function mpdbitl_change_bitlbee_status(data, remaining_calls)
       mpdbitl_disconnect()
 
       if irc_command and #irc_command > 0 then
-         weechat.print(win_buffer, irc_command)
+         weechat.command(win_buffer, irc_command)
       end
 
       return weechat.WEECHAT_RC_OK
@@ -454,7 +447,7 @@ function mpdbitl_initialize()
       ""
    )
 
-   -- weechat.hook_timer(60 * 1000, 60, 0, "mpdbitl_change_bitlbee_status", "")
+   weechat.hook_timer(60 * 1000, 60, 0, "mpdbitl_change_bitlbee_status", "")
 end
 
 mpdbitl_initialize()
