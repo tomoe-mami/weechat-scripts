@@ -1,4 +1,4 @@
-mpdbitl.lua
+mpdbitl
 =================================================================================
 
 A Lua script for [Weechat][] that automatically change [Bitlbee][] status
@@ -14,9 +14,8 @@ Put it in `${WEECHAT_HOME}/lua` and load it like any other Lua script:
 Commands
 ---------------------------------------------------------------------------------
 
-There's only one command at the moment (`/mpdbitl`) for changing the status
-immediately.
-
+You can use `/mpdbitl toggle` to toggle the status update and `/mpdbitl change`
+to change the status immediately.
 
 
 [Weechat]: http://www.weechat.org/
