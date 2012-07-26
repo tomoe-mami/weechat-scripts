@@ -3,10 +3,6 @@
 --    Script that automatically change bitlbee status message into current MPD
 --    track.
 --
---    TODO:
---    - better pattern replacement method
---    - better config handling
---    - add command to toggle script (eg: `/mpdbitl off`)
 
 require("socket")
 
@@ -31,8 +27,9 @@ mpdbitl_song_id            = nil
 mpdbitl_error              = {}
 mpdbitl_config_file        = nil
 mpdbitl_config_file_name   = "mpdbitl"
-mpdbitl_status_command     = "/msg %s account %d set status '%s'"
+mpdbitl_status_command     = "/mute -all msg %s account %d set status '%s'"
 mpdbitl_status_text        = ""
+mpdbitl_timer              = nil
 
 function mpdbitl_config_init()
 
@@ -196,8 +193,13 @@ end
 
 function mpdbitl_msg(...)
    if arg and #arg > 0 then
-      arg[0] = "mpdbitl\t" .. arg[0]
+
+      local format = ""
+      if arg[0] then format = arg[0] end
+
+      arg[0] = "mpdbitl\t" .. format
       weechat.print("", string.format(unpack(arg)))
+
    end
 end
 
@@ -362,11 +364,6 @@ end
 
 function mpdbitl_change_bitlbee_status(data, remaining_calls)
 
-   local enabled = weechat.config_boolean(mpdbitl_config.enable)
-   if not enabled then
-      return weechat.WEECHAT_RC_OK
-   end
-
    local network  = weechat.config_string(mpdbitl_config.network)
    local channel  = weechat.config_string(mpdbitl_config.channel)
    local buf_id   = network .. "." .. channel
@@ -448,9 +445,28 @@ function mpdbitl_toggle()
       new_value = 1
    end
 
-   weechat.config_option_set(mpdbitl_config.enable, new_value, "")
+   local result = weechat.config_option_set(mpdbitl_config.enable, new_value, 1)
+   if new_value == 1 then
+      mpdbitl_set_timer()
+   else
+      mpdbitl_unset_timer()
+   end
 
    return weechat.WEECHAT_RC_OK
+end
+
+function mpdbitl_set_timer()
+   if not mpdbitl_timer then
+      mpdbitl_timer = weechat.hook_timer(
+                        60 * 1000, 60, 0,
+                        "mpdbitl_change_bitlbee_status", "")
+   end
+end
+
+function mpdbitl_unset_timer()
+   if mpdbitl_timer then
+      weechat.unhook(mpdbitl_timer)
+   end
 end
 
 function mpdbitl_command(data, buffer, arg_string)
@@ -466,9 +482,10 @@ function mpdbitl_command(data, buffer, arg_string)
       return mpdbitl_toggle()
    elseif args[1] == "change" then
       return mpdbitl_change_bitlbee_status()
+   else
+      mpdbitl_msg("Unknown command: %s", args[1])
+      return weechat.WEECHAT_RC_ERROR
    end
-
-   return weechat.WEECHAT_RC_OK
 end
 
 function mpdbitl_unload()
@@ -500,7 +517,10 @@ function mpdbitl_initialize()
       ""
    )
 
-   weechat.hook_timer(60 * 1000, 60, 0, "mpdbitl_change_bitlbee_status", "")
+   local enabled = weechat.config_boolean(mpdbitl_config.enable)
+   if enabled == 1 then
+      mpdbitl_set_timer()
+   end
 end
 
 mpdbitl_initialize()
