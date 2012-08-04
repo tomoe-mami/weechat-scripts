@@ -277,11 +277,7 @@ end
 function mpdbitl_send_command(line)
    line = line .. "\n"
    local sent = mpdbitl_sock:send(line)
-   if sent ~= #line then
-      return false
-   else
-      return true
-   end
+   return sent == #line
 end
 
 function mpdbitl_receive_single_response()
@@ -375,8 +371,6 @@ function mpdbitl_format_status_text(text, replacement)
             return ""
          end
       end)
-
-   -- return text:gsub("{{([^}]+)}}", replacement)
 end
 
 function mpdbitl_bar_item(data, item, window)
@@ -535,7 +529,10 @@ function mpdbitl_initialize()
    weechat.hook_command(
       "mpdbitl",
       "Change bitlbee status message into current MPD track",
-      "", "", "",
+      "toggle|change",
+      "toggle: enable/disable script\n" ..
+      "change: change bitlbee status immediately\n",
+      "toggle || change",
       "mpdbitl_command",
       ""
    )
