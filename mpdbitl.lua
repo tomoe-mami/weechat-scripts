@@ -1,8 +1,9 @@
----   mpdbitl
+--[[
+--    mpdbitl
 --
 --    Script that automatically change bitlbee status message into current MPD
 --    track.
---
+--]]
 
 require("socket")
 
@@ -19,13 +20,15 @@ mpdbitl_config =
    account_id     = 0,
    format_playing = "",
    format_paused  = "",
-   format_stopped = ""
+   format_stopped = "",
+   format_none    = ""
 }
 
 mpdbitl_sock               = nil
 mpdbitl_song_id            = nil
 mpdbitl_error              = {}
 mpdbitl_config_file        = nil
+mpdbitl_current_state      = "stop"
 mpdbitl_config_file_name   = "mpdbitl"
 mpdbitl_status_command     = "/mute -all msg %s account %d set status '%s'"
 mpdbitl_status_text        = ""
@@ -172,6 +175,16 @@ function mpdbitl_config_init()
       weechat.config_new_option(
          mpdbitl_config_file, section_bitlbee,
          "format_stopped", "string", "Status format when MPD is stopped",
+         "", 0, 0,
+         "mpdbitl (stopped): {{artist}} - {{title}}",
+         "mpdbitl (stopped): {{artist}} - {{title}}",
+         0,
+         "", "", "", "", "", "")
+
+   mpdbitl_config.format_none =
+      weechat.config_new_option(
+         mpdbitl_config_file, section_bitlbee,
+         "format_none", "string", "Status format when MPD playlist is empty or MPD has reached the end of playlist and there's nothing else to play",
          "", 0, 0,
          "mpdbitl (not playing)",
          "mpdbitl (not playing)",
@@ -355,7 +368,15 @@ function mpdbitl_format_status_text(text, replacement)
       return ""
    end
 
-   return text:gsub("{{([^}]+)}}", replacement)
+   return text:gsub("{{([^}]+)}}", function (key)
+         if replacement[key] then
+            return replacement[key]
+         else
+            return ""
+         end
+      end)
+
+   -- return text:gsub("{{([^}]+)}}", replacement)
 end
 
 function mpdbitl_bar_item(data, item, window)
@@ -390,25 +411,24 @@ function mpdbitl_change_bitlbee_status(data, remaining_calls)
          return text:gsub("'", "\\'")
       end
 
-      if server_status.state == "stop" and mpdbitl_song_id then
+      if server_status.state ~= mpdbitl_current_state or server_status.songid ~= mpdbitl_song_id then
 
-         mpdbitl_song_id = nil
-         mpdbitl_status_text = weechat.config_string(mpdbitl_config.format_stopped)
-         irc_command = string.format(
-                        mpdbitl_status_command,
-                        bitlbot,
-                        account_id,
-                        escape_arg(mpdbitl_status_text))
-
-      elseif server_status.songid ~= mpdbitl_song_id then
-
-         mpdbitl_song_id = server_status.songid
          local format = ""
 
          if server_status.state == "play" then
             format = mpdbitl_config.format_playing
-         else
+         elseif server_status.state == "pause" then
             format = mpdbitl_config.format_paused
+         elseif server_status.state == "stop" then
+            if not server_status.songid then
+               format = mpdbitl_config.format_none
+            else
+               format = mpdbitl_config.format_stopped
+            end
+         else
+            mpdbitl_msg("Unknown state: %s", server_status.state)
+            mpdbitl_disconnect()
+            return weechat.WEECHAT_RC_ERROR
          end
 
          mpdbitl_status_text = mpdbitl_format_status_text(
@@ -420,11 +440,14 @@ function mpdbitl_change_bitlbee_status(data, remaining_calls)
                         bitlbot,
                         account_id,
                         escape_arg(mpdbitl_status_text))
+
+         mpdbitl_current_state   = server_status.state
+         mpdbitl_song_id         = server_status.songid
       end
 
       mpdbitl_disconnect()
 
-      if irc_command and #irc_command > 0 then
+      if irc_command then
          weechat.command(buffer, irc_command)
          weechat.bar_item_update("mpdbitl_track")
       end
@@ -496,7 +519,7 @@ end
 function mpdbitl_initialize()
    weechat.register(
       "mpdbitl",
-      "rumia/gergaji <https://github.com/rumia>",
+      "rumia <https://github.com/rumia>",
       "0.1",
       "WTFPL",
       "Automatically change bitlbee status message into current MPD track",
