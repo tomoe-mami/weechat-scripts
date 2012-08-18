@@ -17,6 +17,40 @@ Commands
 You can use `/mpdbitl toggle` to toggle the status update and `/mpdbitl change`
 to change the status immediately.
 
+Status Format
+---------------------------------------------------------------------------------
+
+This script provides four different status options, each for different
+state of MPD server:
+
+- `mpdbitl.bitlbee.format_playing` is used when MPD is playing a song
+
+- `mpdbitl.bitlbee.format_paused` is used when MPD is paused
+
+- `mpdbitl.bitlbee.format_stopped` is used when MPD is stopped and current song
+  is not empty.
+
+- `mpdbitl.bitlbee.format_none` is used when MPD is stopped and current song is
+  empty.
+
+The current song info will be empty if there's nothing on current playlist
+or MPD has reached the end of the playlist.
+
+You can use the following patterns in all of the above status options:
+
+- `{{artist}}`
+- `{{album}}`
+- `{{track}}`
+- `{{time}}`
+- `{{last_modified}}`
+- `{{date}}`
+- `{{genre}}`
+- `{{disc}}`
+- `{{composer}}`
+- `{{file}}` (file path relative to MPD's music\_directory)
+- `{{pos}}` (song position in current playlist)
+- `{{id}}` (MPD song ID)
+
 
 [Weechat]: http://www.weechat.org/
 [Bitlbee]: http://bitlbee.org

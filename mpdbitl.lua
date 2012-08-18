@@ -3,9 +3,16 @@
 --
 --    Script that automatically change bitlbee status message into current MPD
 --    track.
+--
+--    TODO:
+--
+--       - Handle multiple bitlbee accounts
+--       - Handle protocols that does not use `set status` (like twitter)
+--       - Filter out the replies from bitlbot to us without intercepting replies
+--         for manual command sent by user.
 --]]
 
-require("socket")
+require "socket"
 
 mpdbitl_config =
 {
@@ -184,7 +191,9 @@ function mpdbitl_config_init()
    mpdbitl_config.format_none =
       weechat.config_new_option(
          mpdbitl_config_file, section_bitlbee,
-         "format_none", "string", "Status format when MPD playlist is empty or MPD has reached the end of playlist and there's nothing else to play",
+         "format_none", "string",
+         "Status format when MPD playlist is empty or MPD has reached the " ..
+         "end of playlist and there's nothing else to play",
          "", 0, 0,
          "mpdbitl (not playing)",
          "mpdbitl (not playing)",
@@ -257,6 +266,9 @@ function mpdbitl_connect()
    end
 end
 
+
+-- Escape arguments of MPD server's command. Do not use this for escaping
+-- arguments of Bitlbee's command.
 function mpdbitl_escape_command_arg(arg)
    if type(arg) == "number" then
       return arg
@@ -514,7 +526,7 @@ function mpdbitl_initialize()
    weechat.register(
       "mpdbitl",
       "rumia <https://github.com/rumia>",
-      "0.1",
+      "1.0",
       "WTFPL",
       "Automatically change bitlbee status message into current MPD track",
       "mpdbitl_unload",
