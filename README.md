@@ -36,7 +36,8 @@ state of MPD server:
 The current song info will be empty if there's nothing on current playlist
 or MPD has reached the end of the playlist.
 
-You can use the following patterns in all of the above status options:
+You can use the following patterns in all of the above status options except
+`mpdbitl.bitlbee.format_none`:
 
 - `{{artist}}`
 - `{{album}}`
