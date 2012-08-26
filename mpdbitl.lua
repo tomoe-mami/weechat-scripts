@@ -9,7 +9,6 @@
 --
 --    TODO:
 --
---       - Handle protocols that does not use `set status` (like twitter)
 --       - Filter out the replies from bitlbot to us without intercepting replies
 --         for manual command sent by user.
 --]]
@@ -39,9 +38,14 @@ mpdbitl_error              = {}
 mpdbitl_config_file        = nil
 mpdbitl_current_state      = "stop"
 mpdbitl_config_file_name   = "mpdbitl"
-mpdbitl_status_command     = "/mute -all msg %s account %s set status %s"
 mpdbitl_status_text        = ""
 mpdbitl_timer              = nil
+
+-- 1: bitlbot, 2: account id/tag, 3: status message
+mpdbitl_status_command_normal = "/mute -all msg %s account %s set status %s"
+
+-- 1: nick/handle, 2: status message
+mpdbitl_status_command_alternate = "/mute -all msg %s %s"
 
 function mpdbitl_config_init()
 
@@ -456,12 +460,23 @@ function mpdbitl_change_bitlbee_status(data, remaining_calls)
          local accounts = weechat.config_string(mpdbitl_config.accounts)
 
          for account in accounts:gmatch("[^,]+") do
-            local irc_command =
-               string.format(
-                  mpdbitl_status_command,
-                  bitlbot,
-                  mpdbitl_escape_bitlbee_command_arg(account),
-                  mpdbitl_escape_bitlbee_command_arg(mpdbitl_status_text))
+            local _, _, target = account:find("^@(.+)")
+            local irc_command
+
+            if not target then
+               irc_command =
+                  string.format(
+                     mpdbitl_status_command_normal,
+                     bitlbot,
+                     mpdbitl_escape_bitlbee_command_arg(account),
+                     mpdbitl_escape_bitlbee_command_arg(mpdbitl_status_text))
+            else
+               irc_command =
+                  string.format(
+                  mpdbitl_status_command_alternate,
+                  target,
+                  mpdbitl_status_text)
+            end
 
             weechat.command(buffer, irc_command)
          end
@@ -534,15 +549,14 @@ function mpdbitl_unload()
 end
 
 function mpdbitl_initialize()
-   weechat.register(
+    weechat.register(
       "mpdbitl",
       "rumia <https://github.com/rumia>",
-      "1.0",
+      "1.1",
       "WTFPL",
       "Automatically change bitlbee status message into current MPD track",
       "mpdbitl_unload",
-      ""
-   )
+      "")
 
    mpdbitl_config_init()
    mpdbitl_config_read()
@@ -557,8 +571,7 @@ function mpdbitl_initialize()
       "change: change bitlbee status immediately\n",
       "toggle || change",
       "mpdbitl_command",
-      ""
-   )
+      "")
 
    local enabled = weechat.config_boolean(mpdbitl_config.enable)
    if enabled == 1 then
