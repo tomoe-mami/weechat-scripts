@@ -151,7 +151,9 @@ function mpdbitl_config_init()
    mpdbitl_config.accounts =
       weechat.config_new_option(
          mpdbitl_config_file, section_bitlbee,
-         "accounts", "string", "Comma separated list of Bitlbee account IDs/tags",
+         "accounts", "string",
+         "Comma separated list of Bitlbee account IDs/tags/handles. " ..
+         "To specify a handle, prefix the entry with @",
          "", 0, 0,
          "0", "0", 0,
          "", "", "", "", "", "")
