@@ -15,8 +15,7 @@
 
 require "socket"
 
-mpdbitl_config =
-{
+mpdbitl_config = {
    enable         = true,
    hostname       = "localhost",
    port           = 6600,
@@ -49,164 +48,152 @@ mpdbitl_status_command_alternate = "/mute -all msg %s %s"
 
 function mpdbitl_config_init()
 
-   mpdbitl_config_file = 
+   local structure = {
+      general = {
+         enable = {
+            description = "Enable mpdbitl",
+            default = true
+         }
+      },
+      mpd = {
+         hostname = {
+            description = "Hostname of MPD server",
+            default = "localhost"
+         },
+         port = {
+            description = "Port used by MPD server",
+            default = 6600,
+            min = 1,
+            max= 65535
+         },
+         password = {
+            description = "Password used to authenticate to MPD server",
+            default = ""
+         },
+         timeout = {
+            description = "Connection timeout (in seconds)",
+            default = 3,
+            min = 1,
+            max = 65535
+         }
+      },
+      bitlbee = {
+         network = {
+            description = "Network ID for Bitlbee server",
+            default = "localhost"
+         },
+         channel = {
+            description = "Bitlbee main channel",
+            default = "&bitlbee"
+         },
+         accounts = {
+            description = 
+               "Comma separated list of Bitlbee account IDs/tags/handles. " ..
+               "To specify a handle, prefix the entry with @",
+            default = {0}
+         },
+         bitlbot = {
+            description = "Bitlbee bot handle name",
+            default = "root"
+         },
+         format_playing = {
+            description = "Status format when MPD is playing a song",
+            default = "mpdbitl: {{artist}} — {{title}}"
+         },
+         format_paused = {
+            description = "Status format when MPD is paused",
+            default = "mpdbitl (paused): {{artist}} — {{title}}"
+         },
+         format_stopped = {
+            description = "Status format when MPD is stoppedsong",
+            default = "mpdbitl (stopped): {{artist}} — {{title}}"
+         },
+         format_none = {
+            description = 
+               "Status format when MPD is playlist is empty or MPD has reached " ..
+               "the end of playlist and there's nothing else to play",
+            default = "mpdbitl (not playing)"
+         }
+      }
+   }
+
+   mpdbitl_config_file =
       weechat.config_new(mpdbitl_config_file_name, "mpdbitl_config_reload", "")
 
    if mpdbitl_config_file == "" then
       return
    end
 
-   local general_section =
-      weechat.config_new_section(
-         mpdbitl_config_file, "general",
-         0, 0,
+   for section_name, section_options in pairs(structure) do
+      local section = weechat.config_new_section(
+         mpdbitl_config_file, section_name,
+         0, 0, 
          "", "", "", "", "", "", "", "", "", "")
 
-   if general_section == "" then
-      weechat.config_free(mpdbitl_config_file)
-      return
+      if section == "" then
+         weechat.config_free(mpdbitl_config_file)
+         return
+      end
+
+      for option, definition in pairs(section_options) do
+         local lua_type = type(definition.default)
+
+         if lua_type == "number" then
+            mpdbitl_config[option] =
+               weechat.config_new_option(
+                  mpdbitl_config_file,
+                  section,
+                  option,
+                  "integer",
+                  definition.description,
+                  "",
+                  (definition.min and definition.min or 0),
+                  (definition.max and definition.max or 0),
+                  definition.default,
+                  definition.default,
+                  0,
+                  "", "", "", "", "", "")
+         elseif lua_type == "boolean" then
+            local default = definition.default and "on" or "off"
+            mpdbitl_config[option] =
+               weechat.config_new_option(
+                  mpdbitl_config_file,
+                  section,
+                  option,
+                  "boolean",
+                  definition.description,
+                  "",
+                  0,
+                  0,
+                  default,
+                  default,
+                  0,
+                  "", "", "", "", "", "")
+         elseif lua_type == "table" or lua_type == "string" then
+            local default = definition.default
+            if lua_type == "table" then
+               default = table.concat(
+                           definition.default,
+                           (definition.separator and definition.separator or ","))
+            end
+
+            mpdbitl_config[option] =
+               weechat.config_new_option(
+                  mpdbitl_config_file,
+                  section,
+                  option,
+                  "string",
+                  definition.description,
+                  "",
+                  0,
+                  0,
+                  default,
+                  default,
+                  0,
+                  "", "", "", "", "", "")
+         end
+      end
    end
-
-   mpdbitl_config.enable =
-      weechat.config_new_option(
-         mpdbitl_config_file, general_section,
-         "enable", "boolean",
-         "Enable mpdbitl",
-         "", 0, 0,
-         "on", "on",
-         0, "", "", "", "", "", "")
-
-   local section_mpd =
-      weechat.config_new_section(
-         mpdbitl_config_file, "mpd",
-         0, 0,
-         "", "", "", "", "", "", "", "", "", "")
-
-   if section_mpd == "" then
-      weechat.config_free(mpdbitl_config_file)
-      return
-   end
-
-   mpdbitl_config.hostname =
-      weechat.config_new_option(
-         mpdbitl_config_file, section_mpd,
-         "hostname", "string",
-         "Hostname of MPD server",
-         "", 0, 0,
-         "localhost", "localhost",
-         0, "", "", "", "", "", "")
-
-   mpdbitl_config.port =
-      weechat.config_new_option(
-         mpdbitl_config_file, section_mpd,
-         "port", "integer", "Port used by MPD server",
-         "", 1, 65535,
-         6600, 6600, 0,
-         "", "", "", "", "", "")
-
-   mpdbitl_config.password =
-      weechat.config_new_option(
-         mpdbitl_config_file, section_mpd,
-         "password", "string",
-         "Password used to authenticate to MPD server",
-         "", 0, 0,
-         "", "", 1,
-         "", "", "", "", "", "")
-
-   mpdbitl_config.timeout =
-      weechat.config_new_option(
-         mpdbitl_config_file, section_mpd,
-         "timeout", "integer", "Connection timeout (in seconds)",
-         "", 1, 65535,
-         1, 1, 0,
-         "", "", "", "", "", "")
-
-   local section_bitlbee =
-      weechat.config_new_section(
-         mpdbitl_config_file,
-         "bitlbee",
-         0, 0, "", "", "", "", "", "", "", "", "", "")
-
-   if section_bitlbee == "" then
-      weechat.config_free(mpdbitl_config_file)
-      return
-   end
-
-   mpdbitl_config.network =
-      weechat.config_new_option(
-         mpdbitl_config_file, section_bitlbee,
-         "network", "string", "Network ID for Bitlbee server",
-         "", 0, 0,
-         "localhost", "localhost", 0,
-         "", "", "", "", "", "")
-
-   mpdbitl_config.channel =
-      weechat.config_new_option(
-         mpdbitl_config_file, section_bitlbee,
-         "channel", "string", "Bitlbee main channel",
-         "", 0, 0,
-         "&bitlbee", "&bitlbee", 0,
-         "", "", "", "", "", "")
-
-   mpdbitl_config.accounts =
-      weechat.config_new_option(
-         mpdbitl_config_file, section_bitlbee,
-         "accounts", "string",
-         "Comma separated list of Bitlbee account IDs/tags/handles. " ..
-         "To specify a handle, prefix the entry with @",
-         "", 0, 0,
-         "0", "0", 0,
-         "", "", "", "", "", "")
-
-   mpdbitl_config.bitlbot =
-      weechat.config_new_option(
-         mpdbitl_config_file, section_bitlbee,
-         "bitlbot", "string", "Bitlbee bot handle name",
-         "", 0, 0,
-         "root", "root", 0,
-         "", "", "", "", "", "")
-
-   mpdbitl_config.format_playing =
-      weechat.config_new_option(
-         mpdbitl_config_file, section_bitlbee,
-         "format_playing", "string", "Status format when MPD is playing a song",
-         "", 0, 0,
-         "mpdbitl: {{artist}} - {{title}}",
-         "mpdbitl: {{artist}} - {{title}}",
-         0,
-         "", "", "", "", "", "")
-
-   mpdbitl_config.format_paused =
-      weechat.config_new_option(
-         mpdbitl_config_file, section_bitlbee,
-         "format_paused", "string", "Status format when MPD is paused",
-         "", 0, 0,
-         "mpdbitl (paused): {{artist}} - {{title}}",
-         "mpdbitl (paused): {{artist}} - {{title}}",
-         0,
-         "", "", "", "", "", "")
-
-   mpdbitl_config.format_stopped =
-      weechat.config_new_option(
-         mpdbitl_config_file, section_bitlbee,
-         "format_stopped", "string", "Status format when MPD is stopped",
-         "", 0, 0,
-         "mpdbitl (stopped): {{artist}} - {{title}}",
-         "mpdbitl (stopped): {{artist}} - {{title}}",
-         0,
-         "", "", "", "", "", "")
-
-   mpdbitl_config.format_none =
-      weechat.config_new_option(
-         mpdbitl_config_file, section_bitlbee,
-         "format_none", "string",
-         "Status format when MPD playlist is empty or MPD has reached the " ..
-         "end of playlist and there's nothing else to play",
-         "", 0, 0,
-         "mpdbitl (not playing)",
-         "mpdbitl (not playing)",
-         0,
-         "", "", "", "", "", "")
 end
 
 function mpdbitl_config_reload(data, config_file)
@@ -223,13 +210,7 @@ end
 
 function mpdbitl_msg(...)
    if arg and #arg > 0 then
-
-      local format = ""
-      if arg[0] then format = arg[0] end
-
-      arg[0] = "mpdbitl\t" .. format
       weechat.print("", string.format(unpack(arg)))
-
    end
 end
 
@@ -281,8 +262,8 @@ function mpdbitl_escape_mpd_command_arg(arg)
    if type(arg) == "number" then
       return arg
    elseif type(arg) == "string" then
-      arg = arg:gsub('"', '\\"')
       arg = arg:gsub('\\', '\\\\')
+      arg = arg:gsub('"', '\\"')
       return '"' .. arg .. '"'
    else
       return ""
@@ -310,6 +291,7 @@ function mpdbitl_receive_single_response()
       if line:match("^OK$") then
          complete = true
       elseif line:match("^ACK") then
+         _, _,
          error.code,
          error.index,
          error.command,
@@ -420,9 +402,9 @@ function mpdbitl_change_bitlbee_status(data, remaining_calls)
    end
 
    local bitlbot = weechat.config_string(mpdbitl_config.bitlbot)
-   if weechat.info_get("irc_is_nick", bitlbot) ~= "1" then
-      mpdbitl_msg("Invalid bitlbot handler: %s", bitlbot)
-      return weechat.WEECHAT_RC_OK
+   if weechat.nicklist_search_nick(buffer, "", bitlbot) == "" then
+      mpdbitl_msg("No such nick: %s", bitlbot)
+      return weechat.WEECHAT_RC_ERROR
    end
 
    local change_status = false
