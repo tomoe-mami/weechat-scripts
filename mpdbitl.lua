@@ -6,11 +6,6 @@
 --
 --    Author: rumia <rumia.youkai.of.dusk@gmail.com>
 --    License: WTFPL
---
---    TODO:
---
---       - Filter out the replies from bitlbot to us without intercepting replies
---         for manual command sent by user.
 --]]
 
 require "socket"
@@ -39,6 +34,8 @@ mpdbitl_current_state      = "stop"
 mpdbitl_config_file_name   = "mpdbitl"
 mpdbitl_status_text        = ""
 mpdbitl_timer              = nil
+mpdbitl_caught_messages    = 0
+mpdbitl_msg_hook           = nil
 
 -- 1: bitlbot, 2: account id/tag, 3: status message
 mpdbitl_status_command_normal = "/mute -all msg %s account %s set status %s"
@@ -239,8 +236,9 @@ function mpdbitl_connect()
    else
       local password = weechat.config_string(mpdbitl_config.password)
       if password and #password > 0 then
-
-         local command = "password " .. mpdbitl_escape_mpd_command_arg(password)
+         password = password:gsub('\\', '\\\\')
+         password = password:gsub('"', '\\"')
+         local command = 'password "' .. password .. '"'
 
          if mpdbitl_send_command(command) then
             local response = mpdbitl_fetch_all_responses()
@@ -252,21 +250,6 @@ function mpdbitl_connect()
 
       end
       return true
-   end
-end
-
-
--- Escape arguments of MPD server's command. Do not use this for escaping
--- arguments of Bitlbee's command.
-function mpdbitl_escape_mpd_command_arg(arg)
-   if type(arg) == "number" then
-      return arg
-   elseif type(arg) == "string" then
-      arg = arg:gsub('\\', '\\\\')
-      arg = arg:gsub('"', '\\"')
-      return '"' .. arg .. '"'
-   else
-      return ""
    end
 end
 
@@ -284,7 +267,6 @@ end
 function mpdbitl_receive_single_response()
    local complete, key, value, _
    local error = {}
-
    local line = mpdbitl_sock:receive("*l")
 
    if line then
@@ -389,6 +371,44 @@ function mpdbitl_escape_bitlbee_command_arg(arg)
    end
 end
 
+function mpdbitl_catch_bitlbot_response(total_msg, modifier, msg_network, string)
+   if not total_msg or total_msg == "" then return string end
+   if type(total_msg) == "string" then total_msg = tonumber(total_msg) end
+   if total_msg < 1 or mpdbitl_caught_messages >= total_msg then
+      return string
+   end
+
+   local network = weechat.config_string(mpdbitl_config.network)
+   if network ~= msg_network then return string end
+
+   local parsed = weechat.info_get_hashtable(
+      "irc_message_parse",
+      {message = string})
+
+   if not parsed or type(parsed) ~= "table" then return string end
+
+   local bitlbot = weechat.config_string(mpdbitl_config.bitlbot)
+   if bitlbot ~= parsed.nick then return string end
+
+   local expected_arg = string.format(
+      "%s :status = `%s'",
+      parsed.channel,
+      mpdbitl_status_text)
+
+   if parsed.arguments == expected_arg then
+      mpdbitl_caught_messages = mpdbitl_caught_messages + 1
+      if mpdbitl_caught_messages >= total_msg then
+         if mpdbitl_msg_hook and mpdbitl_msg_hook ~= "" then
+            weechat.unhook(mpdbitl_msg_hook)
+         end
+      end
+
+      return ""
+   else
+      return string
+   end
+end
+
 function mpdbitl_change_bitlbee_status(data, remaining_calls)
 
    local network  = weechat.config_string(mpdbitl_config.network)
@@ -442,30 +462,40 @@ function mpdbitl_change_bitlbee_status(data, remaining_calls)
 
       if change_status then
          local accounts = weechat.config_string(mpdbitl_config.accounts)
+         local command_for_bitlbot = {}
 
          for account in accounts:gmatch("[^,]+") do
             local _, _, target = account:find("^@(.+)")
-            local irc_command
 
             if not target then
-               irc_command =
+               command_for_bitlbot[#command_for_bitlbot + 1] =
                   string.format(
                      mpdbitl_status_command_normal,
                      bitlbot,
                      mpdbitl_escape_bitlbee_command_arg(account),
                      mpdbitl_escape_bitlbee_command_arg(mpdbitl_status_text))
             else
-               irc_command =
+               weechat.command(
+                  buffer,
                   string.format(
-                  mpdbitl_status_command_alternate,
-                  target,
-                  mpdbitl_status_text)
+                     mpdbitl_status_command_alternate,
+                     target,
+                     mpdbitl_status_text))
             end
-
-            weechat.command(buffer, irc_command)
          end
 
          weechat.bar_item_update("mpdbitl_track")
+         if #command_for_bitlbot > 0 then
+            mpdbitl_caught_messages = 0
+            mpdbitl_msg_hook = weechat.hook_modifier(
+               "irc_in2_PRIVMSG",
+               "mpdbitl_catch_bitlbot_response",
+               #command_for_bitlbot)
+
+            for _, cmd in ipairs(command_for_bitlbot) do
+               weechat.command(buffer, cmd)
+            end
+         end
       end
 
       return weechat.WEECHAT_RC_OK
@@ -476,13 +506,7 @@ end
 
 function mpdbitl_toggle()
    local current = weechat.config_boolean(mpdbitl_config.enable)
-   local new_value
-
-   if current == 1 then
-      new_value = 0
-   else
-      new_value = 1
-   end
+   local new_value = (current == 0 and 1 or 0)
 
    local result = weechat.config_option_set(mpdbitl_config.enable, new_value, 1)
    if new_value == 1 then
