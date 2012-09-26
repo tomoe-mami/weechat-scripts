@@ -2,7 +2,7 @@
 --    mpdbitl
 --
 --    Script that automatically change bitlbee status message into current MPD
---    track.
+--    track. Requires Weechat 0.3.5 or higher.
 --
 --    Author: rumia <rumia.youkai.of.dusk@gmail.com>
 --    License: WTFPL
@@ -560,7 +560,7 @@ function mpdbitl_initialize()
     weechat.register(
       "mpdbitl",
       "rumia <https://github.com/rumia>",
-      "1.1",
+      "1.2",
       "WTFPL",
       "Automatically change bitlbee status message into current MPD track",
       "mpdbitl_unload",
