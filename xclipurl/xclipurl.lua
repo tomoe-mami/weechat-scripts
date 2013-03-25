@@ -16,16 +16,8 @@
 
 local active = false
 local selection = "primary"
-local valid_selections = { primary = true, secondary = true, clipboard = true }
+local valid_selections = { primary = 1, secondary = 2, clipboard = 3 }
 local url_list, url_index = {}, 0
-local prompt = "xclipurl %s: <Ctrl-C> Cancel, <Up> Previous, <Down> Next, <Enter> OK [%d]: %s"
-local key_bindings = {
-   ["meta2-A"] = "/xclipurl prev",
-   ["meta2-B"] = "/xclipurl next",
-   ["ctrl-I"]  = "/xclipurl switch",
-   ["ctrl-M"]  = "/xclipurl store",
-   ["ctrl-C"]  = "/xclipurl cancel"
-}
 
 function setup()
    weechat.register(
@@ -69,27 +61,23 @@ end
 function main_command_cb(data, buffer, arg)
    if not active then
       start_url_selection(buffer)
-      return weechat.WEECHAT_RC_OK
    else
-      if arg == "prev" then
+      local op, param = arg:match("^([^ \t]+)[ \t]*(.*)$")
+      if op == "prev" then
          select_prev_url(buffer)
-         return weechat.WEECHAT_RC_OK
-      elseif arg == "next" then
+      elseif op == "next" then
          select_next_url(buffer)
-         return weechat.WEECHAT_RC_OK
-      elseif arg == "switch" then
-         switch_next_mode()
-         return weechat.WEECHAT_RC_OK
-      elseif arg == "store" then
-         local result = store_url()
+      elseif op == "switch" then
+         switch_mode(param)
+      elseif op == "store" then
+         local result = store_url(param)
          finish_url_selection(buffer)
          return result
       else
          finish_url_selection(buffer)
-         return weechat.WEECHAT_RC_OK
       end
    end
-   return weechat.WEECHAT_RC_ERROR
+   return weechat.WEECHAT_RC_OK
 end
 
 function start_url_selection(buffer)
@@ -110,24 +98,55 @@ end
 
 function bar_item_cb(data, item, window)
    if url_list and url_index and url_index ~= 0 and url_list[url_index] then
-      return string.format(prompt, selection, url_index, url_list[url_index])
+      return string.format(
+         "xclipurl %s: <Up> Previous, <Down> Next, " ..
+         "<Ctrl-C> Cancel, <Enter> OK [%d]: %s",
+         selection,
+         url_index,
+         url_list[url_index])
    else
       return ""
    end
 end
 
-function switch_next_mode()
-   if selection == "primary" then
-      selection = "secondary"
-   elseif selection == "secondary" then
-      selection ="clipboard"
-   elseif selection == "clipboard" then
-      selection = "primary"
+function switch_mode(param)
+   if not param then param = "next" end
+
+   if valid_selections[param] then
+      selection = param
+   else
+      local modes = { "primary", "secondary", "clipboard" }
+      local total = #modes
+      local current_index = valid_selections[selection]
+
+      local new_index = current_index + (param == "next" and 1 or -1)
+      if new_index > total then
+         new_index = 1
+      elseif new_index < 1 then
+         new_index = total
+      end
+
+      local new_mode = selection
+      if modes[new_index] then
+         new_mode = modes[new_index]
+         if valid_selections[new_mode] then
+            selection = new_mode
+         end
+      end
    end
    weechat.bar_item_update("xclipurl")
 end
 
 function setup_key_bindings(buffer, mode)
+   local key_bindings = {
+      ["meta2-A"] = "/xclipurl prev",           -- up
+      ["meta2-B"] = "/xclipurl next",           -- down
+      ["ctrl-I"]  = "/xclipurl switch next",    -- tab
+      ["meta2-Z"] = "/xclipurl switch prev",    -- shift-tab
+      ["ctrl-M"]  = "/xclipurl store",          -- enter
+      ["ctrl-C"]  = "/xclipurl cancel"          -- ctrl-c
+   }
+
    local prefix = mode and "key_bind_" or "key_unbind_"
    for key, command in pairs(key_bindings) do
       weechat.buffer_set(buffer, prefix .. key, mode and command or "")
@@ -168,9 +187,14 @@ function collect_urls(buffer)
    url_index = #url_list
 end
 
-function store_url()
-   if url_index and url_list and url_list[url_index] then
-      local url = url_list[url_index]
+function store_url(url)
+   if not url or url == "" then
+      if url_index and url_list and url_list[url_index] then
+         url = url_list[url_index]
+      end
+   end
+
+   if url and #url > 0 then
       local fp = io.popen("xclip -selection " .. selection, "w")
       if not fp then
          weechat.print("", "xclipurl\tUnable to run `xclip`")
@@ -185,6 +209,7 @@ function store_url()
 
       return weechat.WEECHAT_RC_OK
    else
+      weechat.print("", "xclipurl\tEmpty URL")
       return weechat.WEECHAT_RC_ERROR
    end
 end
