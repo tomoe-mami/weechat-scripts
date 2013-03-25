@@ -14,9 +14,10 @@
    Requires: xclip
 --]]
 
-local active = false
+local active, noisy = false, true
 local selection = "primary"
 local valid_selections = { primary = 1, secondary = 2, clipboard = 3 }
+local ignore_stored_url, stored_urls = true, {}
 local url_list, url_index = {}, 0
 
 function setup()
@@ -24,14 +25,25 @@ function setup()
       "xclipurl", "rumia <https://github.com/rumia>", "0.1", "WTFPL",
       "Puts URL into clipboard", "", "")
 
-   local select_opt = weechat.config_is_set_plugin("selection")
-
-   if select_opt == 1 then
-      selection = weechat.config_get_plugin("selection")
+   local opt = weechat.config_get_plugin("selection")
+   if not opt or opt == "" or not valid_selections[opt] then
+      weechat.config_set_plugin("selection", "primary")
+   else
+      selection = opt
    end
 
-   if select_opt == 0 or not valid_selections[selection] then
-      weechat.config_set_plugin("selection", "primary")
+   opt = weechat.config_get_plugin("ignore_stored_url")
+   if not opt or opt == "" or (opt ~= "yes" and opt ~= "no") then
+      weechat.config_set_plugin("ignore_stored_url", "yes")
+   else
+      ignore_stored_url = (opt == "yes")
+   end
+
+   opt = weechat.config_get_plugin("noisy")
+   if not opt or opt == "" or (opt ~= "yes" and opt ~= "no") then
+      weechat.config_set_plugin("noisy", "yes")
+   else
+      noisy = (opt == "yes")
    end
 
    weechat.bar_item_new("xclipurl", "bar_item_cb", "")
@@ -177,7 +189,8 @@ function collect_urls(buffer)
    while weechat.infolist_next(buf_lines) == 1 do
       local message = weechat.infolist_string(buf_lines, "message")
       local url = message:match("([%w-]+://[^%s]+)")
-      if url and not exists[url] then
+      local ignored = (ignore_stored_url and stored_urls[url])
+      if url and not ignored and not exists[url] then
          table.insert(url_list, url)
          exists[url] = true
       end
@@ -203,10 +216,14 @@ function store_url(url)
       fp:write(url)
       fp:close()
 
-      weechat.print("", string.format(
-         "xclipurl\tStored into %s selection: %s",
-         selection, url))
-
+      if ignore_stored_url then
+         stored_urls[url] = true
+      end
+      if noisy then
+         weechat.print("", string.format(
+            "xclipurl\tStored into %s selection: %s",
+            selection, url))
+      end
       return weechat.WEECHAT_RC_OK
    else
       weechat.print("", "xclipurl\tEmpty URL")
