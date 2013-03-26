@@ -9,6 +9,29 @@
    To be able to see the prompt and the selected URL, you must first add item
    `xclipurl` into a bar. You might also want to bind a key for command `/xclipurl`.
 
+   Options:
+
+   - plugins.var.lua.xclipurl.selection (default: "primary")
+
+      Default selection mode to use. Valid values are "primary", "secondary", and
+      "clipboard".
+
+   - plugins.var.lua.xclipurl.ignore_stored_url (default: "yes")
+
+      If set to "yes", URL that has been stored into the clipboard will be
+      ignored the next time you call `/xclipurl` again.
+
+   - plugins.var.lua.xclipurl.noisy (default: "no")
+
+      If set to "yes", the script will print the URL into the core buffer
+      everytime you stored one into the clipboard (ah, you know... for science!)
+
+   - plugins.var.lua.xclipurl.default_color (default: "gray")
+   - plugins.var.lua.xclipurl.mode_color (default: "yellow")
+   - plugins.var.lua.xclipurl.key_color (default: "yellow")
+   - plugins.var.lua.xclipurl.index_color (default: "yellow")
+   - plugins.var.lua.xclipurl.url_color (default: "lightblue")
+
    Author: rumia <https://github.com/rumia>
    License: WTFPL
    Requires: xclip
@@ -16,9 +39,17 @@
 
 local active, noisy = false, true
 local selection = "primary"
-local valid_selections = { primary = 1, secondary = 2, clipboard = 3 }
 local ignore_stored_url, stored_urls = true, {}
 local url_list, url_index = {}, 0
+
+local valid_selections = { primary = 1, secondary = 2, clipboard = 3 }
+local colors = {
+   default  = "gray",
+   key      = "yellow",
+   index    = "yellow",
+   url      = "lightblue",
+   mode     = "yellow"
+}
 
 function setup()
    weechat.register(
@@ -46,10 +77,21 @@ function setup()
       noisy = (opt == "yes")
    end
 
+   for name, value in pairs(colors) do
+      local opt_name = name .. "_color"
+      local opt_value = weechat.config_get_plugin(opt_name)
+
+      if not opt_value or opt_value == "" then
+         weechat.config_set_plugin(opt_name, value)
+      else
+         colors[name] = opt_value
+      end
+   end
+
    weechat.bar_item_new("xclipurl", "bar_item_cb", "")
    weechat.hook_command(
       "xclipurl",
-      "Select URL in a buffer and put it into XClipboard",
+      "Select URL in a buffer and put it into X clipboard",
 
       "[prev|next|switch|store|cancel]",
 
@@ -72,7 +114,7 @@ end
 
 function main_command_cb(data, buffer, arg)
    if not active then
-      start_url_selection(buffer)
+      start_url_selection(buffer, arg == "all")
    else
       local op, param = arg:match("^([^ \t]+)[ \t]*(.*)$")
       if op == "prev" then
@@ -92,10 +134,10 @@ function main_command_cb(data, buffer, arg)
    return weechat.WEECHAT_RC_OK
 end
 
-function start_url_selection(buffer)
+function start_url_selection(buffer, show_all)
    active = true
    setup_key_bindings(buffer, false)
-   collect_urls(buffer)
+   collect_urls(buffer, show_all)
    if url_index > 0 then
       setup_key_bindings(buffer, true)
       weechat.bar_item_update("xclipurl")
@@ -111,11 +153,18 @@ end
 function bar_item_cb(data, item, window)
    if url_list and url_index and url_index ~= 0 and url_list[url_index] then
       return string.format(
-         "xclipurl %s: <Up> Previous, <Down> Next, " ..
-         "<Ctrl-C> Cancel, <Enter> OK [%d]: %s",
-         selection,
-         url_index,
-         url_list[url_index])
+         "%sxclipurl: %s%s%s <%s↑%s> Previous <%s↓%s> Next <%sTab%s> Mode " ..
+         "<%s^C%s> Cancel <%s↵%s> OK #%s%d%s: %s%s%s",
+         weechat.color(colors.default),
+         weechat.color(colors.mode), selection, weechat.color(colors.default),
+         weechat.color(colors.key), weechat.color(colors.default),
+         weechat.color(colors.key), weechat.color(colors.default),
+         weechat.color(colors.key), weechat.color(colors.default),
+         weechat.color(colors.key), weechat.color(colors.default),
+         weechat.color(colors.key), weechat.color(colors.default),
+         weechat.color(colors.index), url_index, weechat.color(colors.default),
+         weechat.color(colors.url), url_list[url_index],
+         weechat.color(colors.default))
    else
       return ""
    end
@@ -153,8 +202,10 @@ function setup_key_bindings(buffer, mode)
    local key_bindings = {
       ["meta2-A"] = "/xclipurl prev",           -- up
       ["meta2-B"] = "/xclipurl next",           -- down
-      ["ctrl-I"]  = "/xclipurl switch next",    -- tab
+      ["ctrl-I"]  = "/xclipurl switch next",    -- tabA
+      ["meta2-C"] = "/xclipurl switch next",    -- right
       ["meta2-Z"] = "/xclipurl switch prev",    -- shift-tab
+      ["meta2-D"] = "/xclipurl switch prev",    -- left
       ["ctrl-M"]  = "/xclipurl store",          -- enter
       ["ctrl-C"]  = "/xclipurl cancel"          -- ctrl-c
    }
@@ -181,18 +232,25 @@ function select_next_url(buffer)
    weechat.bar_item_update("xclipurl")
 end
 
-function collect_urls(buffer)
+function collect_urls(buffer, show_all)
    local buf_lines = weechat.infolist_get("buffer_lines", buffer, "")
    local exists = {}
 
    url_list = {}
+   local pattern = "(%a[%w%+%.%-]+://[%w:!/#_~@&=,;%+%?%[%]%.%%%-]+)([^%s]*)"
    while weechat.infolist_next(buf_lines) == 1 do
       local message = weechat.infolist_string(buf_lines, "message")
-      local url = message:match("([%w-]+://[^%s]+)")
-      local ignored = (ignore_stored_url and stored_urls[url])
-      if url and not ignored and not exists[url] then
-         table.insert(url_list, url)
-         exists[url] = true
+      local url, tail = message:match(pattern)
+      if url then
+         -- ugly workaround for wikimedia's "(stuff)" suffix on their URLs
+         if tail and tail ~= "" then
+            url = url .. (tail:match("^(%b())") or "")
+         end
+         local ignored = not show_all and ignore_stored_url and stored_urls[url]
+         if not ignored and not exists[url] then
+            table.insert(url_list, url)
+            exists[url] = true
+         end
       end
    end
 
