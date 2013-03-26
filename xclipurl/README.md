@@ -9,7 +9,14 @@ the URL selection.
 To be able to see the prompt and the selected URL, you must first add item
 `xclipurl` into a bar. You might also want to bind a key for command `/xclipurl`.
 
-This script requires [xclip](http://sourceforge.net/projects/xclip/)
+Here's a screenshot of it:
+
+![screenshot][]
+
+This script requires [xclip][]
+
+[xclip]: http://sourceforge.net/projects/xclip/
+[screenshot]: http://i.imgur.com/IvSxwMx.png
 
 Options
 -------
