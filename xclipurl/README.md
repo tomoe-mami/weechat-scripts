@@ -16,7 +16,7 @@ Here's a screenshot of it:
 This script requires [xclip][]
 
 [xclip]: http://sourceforge.net/projects/xclip/
-[screenshot]: http://i.imgur.com/IvSxwMx.png
+[screenshot]: http://i.imgur.com/LTad6Xn.png
 
 Options
 -------
