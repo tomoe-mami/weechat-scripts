@@ -93,8 +93,9 @@ function setup()
       "xclipurl",
       "Select URL in a buffer and put it into X clipboard",
 
-      "[prev|next|switch|store|cancel]",
+      "[all|prev|next|switch|store|cancel]",
 
+      "all        : Include all URLs in selection\n" ..
       "prev       : Select previous URL\n" ..
       "next       : Select next URL\n" ..
       "switch     : Switch selection mode\n" ..
@@ -106,7 +107,7 @@ function setup()
       "Enter      : Store currently selected URL\n" ..
       "Ctrl-C     : Cancel URL selection\n\n",
 
-      "prev || next || switch || store || cancel",
+      "all || prev || next || switch || store || cancel",
 
       "main_command_cb",
       "")
@@ -118,9 +119,9 @@ function main_command_cb(data, buffer, arg)
    else
       local op, param = arg:match("^([^ \t]+)[ \t]*(.*)$")
       if op == "prev" then
-         select_prev_url(buffer)
+         select_url(-1)
       elseif op == "next" then
-         select_next_url(buffer)
+         select_url(1)
       elseif op == "switch" then
          switch_mode(param)
       elseif op == "store" then
@@ -202,7 +203,7 @@ function setup_key_bindings(buffer, mode)
    local key_bindings = {
       ["meta2-A"] = "/xclipurl prev",           -- up
       ["meta2-B"] = "/xclipurl next",           -- down
-      ["ctrl-I"]  = "/xclipurl switch next",    -- tabA
+      ["ctrl-I"]  = "/xclipurl switch next",    -- tab
       ["meta2-C"] = "/xclipurl switch next",    -- right
       ["meta2-Z"] = "/xclipurl switch prev",    -- shift-tab
       ["meta2-D"] = "/xclipurl switch prev",    -- left
@@ -216,20 +217,17 @@ function setup_key_bindings(buffer, mode)
    end
 end
 
-function select_prev_url(buffer)
-   url_index = url_index - 1
-   if url_index < 1 then
-      url_index = #url_list
+function select_url(rel_pos)
+   local total = #url_list
+   if total > 0 then
+      url_index = url_index + rel_pos
+      if url_index < 1 then
+         url_index = total
+      elseif url_index > total then
+         url_index = 1
+      end
+      weechat.bar_item_update("xclipurl")
    end
-   weechat.bar_item_update("xclipurl")
-end
-
-function select_next_url(buffer)
-   url_index = url_index + 1
-   if url_index > #url_list then
-      url_index = 1
-   end
-   weechat.bar_item_update("xclipurl")
 end
 
 function collect_urls(buffer, show_all)
