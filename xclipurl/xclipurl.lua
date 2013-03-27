@@ -154,10 +154,12 @@ end
 function bar_item_cb(data, item, window)
    if url_list and url_index and url_index ~= 0 and url_list[url_index] then
       return string.format(
-         "%sxclipurl: %s%s%s <%s↑%s> Previous <%s↓%s> Next <%sTab%s> Mode " ..
+         "%sxclipurl: %s%s%s <%s↑%s> Prev <%s↓%s> Next <%sTab%s> Mode " ..
          "<%s^C%s> Cancel <%s↵%s> OK #%s%d%s: %s%s%s",
          weechat.color(colors.default),
-         weechat.color(colors.mode), selection, weechat.color(colors.default),
+         weechat.color(colors.mode),
+         selection:sub(1, 3),
+         weechat.color(colors.default),
          weechat.color(colors.key), weechat.color(colors.default),
          weechat.color(colors.key), weechat.color(colors.default),
          weechat.color(colors.key), weechat.color(colors.default),
