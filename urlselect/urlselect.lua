@@ -200,7 +200,7 @@ function buffer_switch_cb(data, signal, buffer)
 end
 
 function start_url_selection(show_all)
-   collect_urls(active_buffer, show_all)
+   collect_urls(show_all)
    if url_index > 0 then
       setup_key_bindings(true)
       w.bar_item_update(SCRIPT_NAME)
