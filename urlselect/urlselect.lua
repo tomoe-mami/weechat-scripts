@@ -38,14 +38,14 @@
 --]]
 
 local SCRIPT_NAME = "urlselect"
+local w = weechat
 
-local active, noisy = false, true
+local active_buffer, noisy = nil, true
 local ignore_copied_url, copied_urls = true, {}
 local url_list, url_index = {}, 0
 
-local valid_modes = {}
-local mode_order = {}
-local current_mode = ""
+local valid_modes, mode_order, current_mode = {}, {}, ""
+local buf_switch_hook = ""
 
 local colors = {
    default  = "gray",
@@ -56,7 +56,7 @@ local colors = {
 }
 
 function message(text)
-   weechat.print("", SCRIPT_NAME .. "\t" .. text)
+   w.print("", SCRIPT_NAME .. "\t" .. text)
 end
 
 function setup()
@@ -76,45 +76,45 @@ function setup()
    if #mode_order < 1 then
       error("You need xclip and/or tmux to use this script.")
    else
-      weechat.register(
+      w.register(
          SCRIPT_NAME, "rumia <https://github.com/rumia>", "0.1", "WTFPL",
-         "Puts URL into clipboard", "", "")
+         "Puts URL into clipboard", "unload", "")
 
-      local opt = weechat.config_get_plugin("mode")
+      local opt = w.config_get_plugin("mode")
       if not opt or opt == "" or not valid_modes[opt] then
-         weechat.config_set_plugin("mode", mode_order[1])
+         w.config_set_plugin("mode", mode_order[1])
          current_mode = mode_order[1]
       else
          current_mode = opt
       end
 
-      opt = weechat.config_get_plugin("ignore_copied_url")
+      opt = w.config_get_plugin("ignore_copied_url")
       if not opt or opt == "" or (opt ~= "yes" and opt ~= "no") then
-         weechat.config_set_plugin("ignore_copied_url", "yes")
+         w.config_set_plugin("ignore_copied_url", "yes")
       else
          ignore_copied_url = (opt == "yes")
       end
 
-      opt = weechat.config_get_plugin("noisy")
+      opt = w.config_get_plugin("noisy")
       if not opt or opt == "" or (opt ~= "yes" and opt ~= "no") then
-         weechat.config_set_plugin("noisy", "yes")
+         w.config_set_plugin("noisy", "yes")
       else
          noisy = (opt == "yes")
       end
 
       for name, value in pairs(colors) do
          local opt_name = name .. "_color"
-         local opt_value = weechat.config_get_plugin(opt_name)
+         local opt_value = w.config_get_plugin(opt_name)
 
          if not opt_value or opt_value == "" then
-            weechat.config_set_plugin(opt_name, value)
+            w.config_set_plugin(opt_name, value)
          else
             colors[name] = opt_value
          end
       end
 
-      weechat.bar_item_new(SCRIPT_NAME, "bar_item_cb", "")
-      weechat.hook_command(
+      w.bar_item_new(SCRIPT_NAME, "bar_item_cb", "")
+      w.hook_command(
          SCRIPT_NAME,
          "Select URL in a buffer and copy it into X clipboard or Tmux buffer",
 
@@ -141,19 +141,19 @@ function setup()
          local msg = string.format(
             "%sSetup complete. Ignore copied URL: %s%s%s. Noisy: %syes%s. " ..
             "Available modes:",
-            weechat.color(colors.default),
-            weechat.color(colors.key),
+            w.color(colors.default),
+            w.color(colors.key),
             (ignore_copied_url and "yes" or "no"),
-            weechat.color(colors.default),
-            weechat.color(colors.key),
-            weechat.color(colors.default))
+            w.color(colors.default),
+            w.color(colors.key),
+            w.color(colors.default))
 
          for index, name in ipairs(mode_order) do
             local entry = string.format("%d.%s", index, name)
             if name == current_mode then
-               entry = weechat.color(colors.key) ..
+               entry = w.color(colors.key) ..
                        entry ..
-                       weechat.color(colors.default)
+                       w.color(colors.default)
             end
             msg = msg .. " " .. entry
          end
@@ -162,9 +162,17 @@ function setup()
    end
 end
 
+function unload()
+   if active_buffer then
+      setup_key_bindings(false)
+   end
+   w.unhook_all()
+end
+
 function main_command_cb(data, buffer, arg)
-   if not active then
-      start_url_selection(buffer, arg == "all")
+   if not active_buffer then
+      active_buffer = buffer
+      start_url_selection(arg == "all")
    else
       local op, param = arg:match("^([^ \t]+)[ \t]*(.*)$")
       if op == "prev" then
@@ -175,29 +183,40 @@ function main_command_cb(data, buffer, arg)
          switch_mode(param)
       elseif op == "copy" then
          local result = copy_url(param)
-         finish_url_selection(buffer)
+         finish_url_selection()
          return result
       else
-         finish_url_selection(buffer)
+         finish_url_selection()
       end
    end
-   return weechat.WEECHAT_RC_OK
+   return w.WEECHAT_RC_OK
 end
 
-function start_url_selection(buffer, show_all)
-   active = true
-   setup_key_bindings(buffer, false)
-   collect_urls(buffer, show_all)
-   if url_index > 0 then
-      setup_key_bindings(buffer, true)
-      weechat.bar_item_update(SCRIPT_NAME)
+function buffer_switch_cb(data, signal, buffer)
+   if buffer ~= active_buffer then
+      finish_url_selection()
    end
+   return w.WEECHAT_RC_OK
 end
 
-function finish_url_selection(buffer)
-   setup_key_bindings(buffer, false)
-   url_list, url_index, active = nil, nil, false
-   weechat.bar_item_update(SCRIPT_NAME)
+function start_url_selection(show_all)
+   collect_urls(active_buffer, show_all)
+   if url_index > 0 then
+      setup_key_bindings(true)
+      w.bar_item_update(SCRIPT_NAME)
+   end
+   buf_switch_hook = w.hook_signal("buffer_switch", "buffer_switch_cb", "")
+end
+
+function finish_url_selection()
+   if active_buffer then
+      setup_key_bindings(false)
+      url_list, url_index, active_buffer = nil, nil, nil
+      w.bar_item_update(SCRIPT_NAME)
+      if buf_switch_hook ~= "" then
+         w.unhook(buf_switch_hook)
+      end
+   end
 end
 
 function bar_item_cb(data, item, window)
@@ -210,20 +229,20 @@ function bar_item_cb(data, item, window)
 
    if url_list and url_index and url_index ~= 0 and url_list[url_index] then
       return string.format(
-         "%scopy: %s%s%s <%s↑%s> prev <%s↓%s> next <%stab%s> mode " ..
+         "%surlselect: %s%s%s <%s↑%s> prev <%s↓%s> next <%stab%s> mode " ..
          "<%s^c%s> cancel <%s↵%s> ok #%s%d%s: %s%s%s",
-         weechat.color(colors.default),
-         weechat.color(colors.mode),
+         w.color(colors.default),
+         w.color(colors.mode),
          mode_label[current_mode],
-         weechat.color(colors.default),
-         weechat.color(colors.key), weechat.color(colors.default),
-         weechat.color(colors.key), weechat.color(colors.default),
-         weechat.color(colors.key), weechat.color(colors.default),
-         weechat.color(colors.key), weechat.color(colors.default),
-         weechat.color(colors.key), weechat.color(colors.default),
-         weechat.color(colors.index), url_index, weechat.color(colors.default),
-         weechat.color(colors.url), url_list[url_index],
-         weechat.color(colors.default))
+         w.color(colors.default),
+         w.color(colors.key), w.color(colors.default),
+         w.color(colors.key), w.color(colors.default),
+         w.color(colors.key), w.color(colors.default),
+         w.color(colors.key), w.color(colors.default),
+         w.color(colors.key), w.color(colors.default),
+         w.color(colors.index), url_index, w.color(colors.default),
+         w.color(colors.url), url_list[url_index],
+         w.color(colors.default))
    else
       return ""
    end
@@ -253,10 +272,10 @@ function switch_mode(param)
          end
       end
    end
-   weechat.bar_item_update(SCRIPT_NAME)
+   w.bar_item_update(SCRIPT_NAME)
 end
 
-function setup_key_bindings(buffer, mode)
+function setup_key_bindings(mode)
    local key_bindings = {
       ["meta2-A"] = "/" .. SCRIPT_NAME .. " prev",           -- up
       ["meta2-B"] = "/" .. SCRIPT_NAME .. " next",           -- down
@@ -270,7 +289,7 @@ function setup_key_bindings(buffer, mode)
 
    local prefix = mode and "key_bind_" or "key_unbind_"
    for key, command in pairs(key_bindings) do
-      weechat.buffer_set(buffer, prefix .. key, mode and command or "")
+      w.buffer_set(active_buffer, prefix .. key, mode and command or "")
    end
 end
 
@@ -283,19 +302,19 @@ function select_url(rel_pos)
       elseif url_index > total then
          url_index = 1
       end
-      weechat.bar_item_update(SCRIPT_NAME)
+      w.bar_item_update(SCRIPT_NAME)
    end
 end
 
-function collect_urls(buffer, show_all)
-   local buf_lines = weechat.infolist_get("buffer_lines", buffer, "")
+function collect_urls(show_all)
+   local buf_lines = w.infolist_get("buffer_lines", active_buffer, "")
    local exists = {}
 
    url_list = {}
    local pattern = "(%a[%w%+%.%-]+://[%w:!/#_~@&=,;%+%?%[%]%.%%%-]+)([^%s]*)"
-   while weechat.infolist_next(buf_lines) == 1 do
-      local message = weechat.infolist_string(buf_lines, "message")
-      local url, tail = message:match(pattern)
+   while w.infolist_next(buf_lines) == 1 do
+      local message = w.infolist_string(buf_lines, "message")
+      local url, tail = w.string_remove_color(message, ""):match(pattern)
       if url then
          -- ugly workaround for wikimedia's "(stuff)" suffix on their URLs
          if tail and tail ~= "" then
@@ -309,7 +328,7 @@ function collect_urls(buffer, show_all)
       end
    end
 
-   weechat.infolist_free(buf_lines)
+   w.infolist_free(buf_lines)
    url_index = #url_list
 end
 
@@ -326,13 +345,13 @@ function copy_url(url)
          if ignore_copied_url then
             copied_urls[url] = true
          end
-         return weechat.WEECHAT_RC_OK
+         return w.WEECHAT_RC_OK
       else
-         return weechat.WEECHAT_RC_ERROR
+         return w.WEECHAT_RC_ERROR
       end
    else
       message("Empty URL")
-      return weechat.WEECHAT_RC_ERROR
+      return w.WEECHAT_RC_ERROR
    end
 end
 
