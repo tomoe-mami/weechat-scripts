@@ -92,47 +92,7 @@ function setup()
          SCRIPT_NAME, "rumia <https://github.com/rumia>", "0.1", "WTFPL",
          "Puts URL into clipboard", "unload", "")
 
-      local opt = w.config_get_plugin("mode")
-      if not opt or opt == "" or not valid_modes[opt] then
-         w.config_set_plugin("mode", mode_order[1])
-         current_mode = mode_order[1]
-      else
-         current_mode = opt
-      end
-
-      opt = w.config_get_plugin("ignore_copied_url")
-      if not opt or opt == "" or (opt ~= "yes" and opt ~= "no") then
-         w.config_set_plugin("ignore_copied_url", "yes")
-      else
-         ignore_copied_url = (opt == "yes")
-      end
-
-      opt = w.config_get_plugin("noisy")
-      if not opt or opt == "" or (opt ~= "yes" and opt ~= "no") then
-         w.config_set_plugin("noisy", "yes")
-      else
-         noisy = (opt == "yes")
-      end
-
-      for name, value in pairs(colors) do
-         local opt_name = name .. "_color"
-         local opt_value = w.config_get_plugin(opt_name)
-
-         if not opt_value or opt_value == "" then
-            w.config_set_plugin(opt_name, value)
-         else
-            colors[name] = opt_value
-         end
-      end
-
-      for index = 0, 9 do
-         local opt_value = w.config_get_plugin("ext_cmd_" .. index)
-         if opt_value and opt_value ~= "" then
-            external_commands[index] = opt_value
-            key_bindings[index] = "/" .. SCRIPT_NAME .. " exec " .. index
-         end
-      end
-
+      local total_external_commands = load_config()
       w.bar_item_new(SCRIPT_NAME, "bar_item_cb", "")
       w.hook_command(
          SCRIPT_NAME,
@@ -169,7 +129,7 @@ function setup()
             w.color(colors.key),
             w.color(colors.default),
             w.color(colors.key),
-            #external_commands,
+            total_external_commands,
             w.color(colors.default))
 
          for index, name in ipairs(mode_order) do
@@ -184,6 +144,52 @@ function setup()
          message(msg)
       end
    end
+end
+
+function load_config()
+   local opt = w.config_get_plugin("mode")
+   if not opt or opt == "" or not valid_modes[opt] then
+      w.config_set_plugin("mode", mode_order[1])
+      current_mode = mode_order[1]
+   else
+      current_mode = opt
+   end
+
+   opt = w.config_get_plugin("ignore_copied_url")
+   if not opt or opt == "" or (opt ~= "yes" and opt ~= "no") then
+      w.config_set_plugin("ignore_copied_url", "yes")
+   else
+      ignore_copied_url = (opt == "yes")
+   end
+
+   opt = w.config_get_plugin("noisy")
+   if not opt or opt == "" or (opt ~= "yes" and opt ~= "no") then
+      w.config_set_plugin("noisy", "yes")
+   else
+      noisy = (opt == "yes")
+   end
+
+   for name, value in pairs(colors) do
+      local opt_name = name .. "_color"
+      local opt_value = w.config_get_plugin(opt_name)
+
+      if not opt_value or opt_value == "" then
+         w.config_set_plugin(opt_name, value)
+      else
+         colors[name] = opt_value
+      end
+   end
+
+   local cmd_count = 0
+   for index = 0, 9 do
+      local opt_value = w.config_get_plugin("ext_cmd_" .. index)
+      if opt_value and opt_value ~= "" then
+         external_commands[index] = opt_value
+         key_bindings[index] = "/" .. SCRIPT_NAME .. " exec " .. index
+         cmd_count = cmd_count +1
+      end
+   end
+   return cmd_count
 end
 
 function unload()
@@ -397,20 +403,10 @@ end
 
 function copy_into_tmux(url)
    local command = "tmux set-buffer " .. escape_url(url)
-   w.hook_process(command, 0, "copy_into_tmux_cb", "")
+   w.hook_process(
+      command, 0, "run_external_cb",
+      "Copied into tmux buffer: " .. url)
    return true
-end
-
-function copy_into_tmux_cb(data, command, status, output, error)
-   if status == w.WEECHAT_HOOK_PROCESS_ERROR then
-      message(string.format("Unable to run `%s`: %s", command, error))
-      return w.WEECHAT_RC_ERROR
-   elseif status == 0 then
-      if noisy then
-         message(string.format("Copied into tmux buffer: %s", url))
-      end
-      return w.WEECHAT_RC_OK
-   end
 end
 
 function run_external(index)
@@ -430,7 +426,11 @@ function run_external_cb(data, command, status, output, error)
       return w.WEECHAT_RC_ERROR
    elseif status == 0 then
       if noisy then
-         message(string.format("`%s` executed. Output: %s", command, output))
+         if data and data ~= "" then
+            message(string.format(data, output))
+         else
+            message(string.format("`%s` executed. Output: %s", command, output))
+         end
       end
       return w.WEECHAT_RC_OK
    end
