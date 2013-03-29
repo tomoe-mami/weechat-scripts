@@ -46,6 +46,18 @@ local url_list, url_index = {}, 0
 
 local valid_modes, mode_order, current_mode = {}, {}, ""
 local buf_switch_hook = ""
+local external_commands = {}
+local key_bindings = {
+   ["meta2-A"] = "/" .. SCRIPT_NAME .. " prev",           -- up
+   ["meta2-B"] = "/" .. SCRIPT_NAME .. " next",           -- down
+   ["ctrl-I"]  = "/" .. SCRIPT_NAME .. " switch next",    -- tab
+   ["meta2-C"] = "/" .. SCRIPT_NAME .. " switch next",    -- right
+   ["meta2-Z"] = "/" .. SCRIPT_NAME .. " switch prev",    -- shift-tab
+   ["meta2-D"] = "/" .. SCRIPT_NAME .. " switch prev",    -- left
+   ["ctrl-M"]  = "/" .. SCRIPT_NAME .. " copy",           -- enter
+   ["ctrl-C"]  = "/" .. SCRIPT_NAME .. " cancel",          -- ctrl-c
+}
+
 
 local colors = {
    default  = "gray",
@@ -113,17 +125,26 @@ function setup()
          end
       end
 
+      for index = 0, 9 do
+         local opt_value = w.config_get_plugin("ext_cmd_" .. index)
+         if opt_value and opt_value ~= "" then
+            external_commands[index] = opt_value
+            key_bindings[index] = "/" .. SCRIPT_NAME .. " exec " .. index
+         end
+      end
+
       w.bar_item_new(SCRIPT_NAME, "bar_item_cb", "")
       w.hook_command(
          SCRIPT_NAME,
          "Select URL in a buffer and copy it into X clipboard or Tmux buffer",
 
-         "[all|prev|next|switch|copy|cancel]",
+         "[all|prev|next|switch|exec|copy|cancel]",
 
          "all        : Include all URLs in selection\n" ..
          "prev       : Select previous URL\n" ..
          "next       : Select next URL\n" ..
          "switch     : Switch selection mode\n" ..
+         "exec       : Execute external command\n" ..
          "copy       : Copy currently selected URL\n" ..
          "cancel     : Cancel URL selection\n\n" ..
          "KEYS\n\n" ..
@@ -132,7 +153,7 @@ function setup()
          "Enter      : Copy currently selected URL\n" ..
          "Ctrl-C     : Cancel URL selection\n\n",
 
-         "all || prev || next || switch || copy || cancel",
+         "all || prev || next || switch || exec || copy || cancel",
 
          "main_command_cb",
          "")
@@ -140,12 +161,15 @@ function setup()
       if noisy then
          local msg = string.format(
             "%sSetup complete. Ignore copied URL: %s%s%s. Noisy: %syes%s. " ..
-            "Available modes:",
+            "%s%d%s external commands. Available modes:",
             w.color(colors.default),
             w.color(colors.key),
             (ignore_copied_url and "yes" or "no"),
             w.color(colors.default),
             w.color(colors.key),
+            w.color(colors.default),
+            w.color(colors.key),
+            #external_commands,
             w.color(colors.default))
 
          for index, name in ipairs(mode_order) do
@@ -181,6 +205,10 @@ function main_command_cb(data, buffer, arg)
          select_url(1)
       elseif op == "switch" then
          switch_mode(param)
+      elseif op == "exec" then
+         local result = run_external(tonumber(param))
+         finish_url_selection()
+         return result
       elseif op == "copy" then
          local result = copy_url(param)
          finish_url_selection()
@@ -276,17 +304,6 @@ function switch_mode(param)
 end
 
 function setup_key_bindings(mode)
-   local key_bindings = {
-      ["meta2-A"] = "/" .. SCRIPT_NAME .. " prev",           -- up
-      ["meta2-B"] = "/" .. SCRIPT_NAME .. " next",           -- down
-      ["ctrl-I"]  = "/" .. SCRIPT_NAME .. " switch next",    -- tab
-      ["meta2-C"] = "/" .. SCRIPT_NAME .. " switch next",    -- right
-      ["meta2-Z"] = "/" .. SCRIPT_NAME .. " switch prev",    -- shift-tab
-      ["meta2-D"] = "/" .. SCRIPT_NAME .. " switch prev",    -- left
-      ["ctrl-M"]  = "/" .. SCRIPT_NAME .. " copy",           -- enter
-      ["ctrl-C"]  = "/" .. SCRIPT_NAME .. " cancel"          -- ctrl-c
-   }
-
    local prefix = mode and "key_bind_" or "key_unbind_"
    for key, command in pairs(key_bindings) do
       w.buffer_set(active_buffer, prefix .. key, mode and command or "")
@@ -332,14 +349,18 @@ function collect_urls(show_all)
    url_index = #url_list
 end
 
-function copy_url(url)
+function get_url(url)
    if not url or url == "" then
       if url_index and url_list and url_list[url_index] then
          url = url_list[url_index]
       end
    end
+   return url
+end
 
-   if url and #url > 0 then
+function copy_url(url)
+   url = get_url(url)
+   if url and url ~= "" then
       local cb = (current_mode == "tmux" and copy_into_tmux or copy_into_xsel)
       if cb(url) then
          if ignore_copied_url then
@@ -370,15 +391,48 @@ function copy_into_xsel(url)
    return true
 end
 
+function escape_url(url)
+   return url:gsub("([^%w])", "\\%1")
+end
+
 function copy_into_tmux(url)
-   local escaped = url:gsub("([^%w])", "\\%1")
-   if os.execute("tmux set-buffer " .. escaped) ~= 0 then
-      return false
-   else
+   local command = "tmux set-buffer " .. escape_url(url)
+   w.hook_process(command, 0, "copy_into_tmux_cb", "")
+   return true
+end
+
+function copy_into_tmux_cb(data, command, status, output, error)
+   if status == w.WEECHAT_HOOK_PROCESS_ERROR then
+      message(string.format("Unable to run `%s`: %s", command, error))
+      return w.WEECHAT_RC_ERROR
+   elseif status == 0 then
       if noisy then
          message(string.format("Copied into tmux buffer: %s", url))
       end
-      return true
+      return w.WEECHAT_RC_OK
+   end
+end
+
+function run_external(index)
+   if external_commands[index] then
+      local url = get_url()
+      if url and url ~= "" then
+         local command = external_commands[index] .. " " .. escape_url(url)
+         w.hook_process(command, 0, "run_external_cb", "")
+         return w.WEECHAT_RC_OK
+      end
+   end
+end
+
+function run_external_cb(data, command, status, output, error)
+   if status == w.WEECHAT_HOOK_PROCESS_ERROR then
+      message(string.format("Unable to run `%s`: %s", command, error))
+      return w.WEECHAT_RC_ERROR
+   elseif status == 0 then
+      if noisy then
+         message(string.format("`%s` executed. Output: %s", command, output))
+      end
+      return w.WEECHAT_RC_OK
    end
 end
 
