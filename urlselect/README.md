@@ -38,9 +38,28 @@ Options
   If set to **yes**, the script will print the URL into the core buffer
   everytime you stored one into the clipboard (ah, you know... for science!)
 
+- **plugins.var.lua.urlselect.ext_cmd_?** (default: none)
+
+  This option can be used to bind an external command to key 0-9 (replace the
+  **?** on the option name with the key you want to bind). The selected URL will
+  be appended to the command before executing it.
+
 - **plugins.var.lua.urlselect.default_color** (default: **gray**)
+
+  Colors for default text.
+
 - **plugins.var.lua.urlselect.mode_color** (default: **yellow**)
+
+  Colors for active mode.
+
 - **plugins.var.lua.urlselect.key_color** (default: **yellow**)
+
+  Colors for shortcut key.
+
 - **plugins.var.lua.urlselect.index_color** (default: **yellow**)
+
+  Colors for URL index.
+
 - **plugins.var.lua.urlselect.url_color** (default: **lightblue**)
 
+  Colors for selected URL.

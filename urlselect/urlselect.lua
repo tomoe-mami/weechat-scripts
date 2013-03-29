@@ -9,38 +9,16 @@
    To be able to see the prompt and the selected URL, you must first add item
    `urlselect` into a bar. You might also want to bind a key for command `/urlselect`.
 
-   Options:
-
-   - plugins.var.lua.urlselect.selection (default: "primary")
-
-      Default selection mode to use. Valid values are "primary", "secondary", and
-      "clipboard".
-
-   - plugins.var.lua.urlselect.ignore_stored_url (default: "yes")
-
-      If set to "yes", URL that has been stored into the clipboard will be
-      ignored the next time you call `/urlselect` again.
-
-   - plugins.var.lua.urlselect.noisy (default: "no")
-
-      If set to "yes", the script will print the URL into the core buffer
-      everytime you stored one into the clipboard (ah, you know... for science!)
-
-   - plugins.var.lua.urlselect.default_color (default: "gray")
-   - plugins.var.lua.urlselect.mode_color (default: "yellow")
-   - plugins.var.lua.urlselect.key_color (default: "yellow")
-   - plugins.var.lua.urlselect.index_color (default: "yellow")
-   - plugins.var.lua.urlselect.url_color (default: "lightblue")
-
    Author: rumia <https://github.com/rumia>
+   URL: https://github.com/rumia/weechat-scripts
    License: WTFPL
-   Requires: xclip
+   Requires: weechat >= 0.3.5, xclip or tmux
 --]]
 
 local SCRIPT_NAME = "urlselect"
 local w = weechat
 
-local active_buffer, noisy = nil, true
+local active_buffer, noisy = false, true
 local ignore_copied_url, copied_urls = true, {}
 local url_list, url_index = {}, 0
 
@@ -55,7 +33,7 @@ local key_bindings = {
    ["meta2-Z"] = "/" .. SCRIPT_NAME .. " switch prev",    -- shift-tab
    ["meta2-D"] = "/" .. SCRIPT_NAME .. " switch prev",    -- left
    ["ctrl-M"]  = "/" .. SCRIPT_NAME .. " copy",           -- enter
-   ["ctrl-C"]  = "/" .. SCRIPT_NAME .. " cancel",          -- ctrl-c
+   ["ctrl-C"]  = "/" .. SCRIPT_NAME .. " cancel"          -- ctrl-c
 }
 
 
@@ -73,10 +51,8 @@ end
 
 function setup()
    if os.execute("type xclip >/dev/null 2>&1") == 0 then
-      mode_order = { "primary", "secondary", "clipboard" }
-      for index, name in ipairs(mode_order) do
-         valid_modes[name] = index
-      end
+      mode_order = { "primary", "clipboard" }
+      valid_modes = { primary = 1, clipboard = 2 }
    end
 
    local is_tmux = os.getenv("TMUX")
@@ -90,7 +66,9 @@ function setup()
    else
       w.register(
          SCRIPT_NAME, "rumia <https://github.com/rumia>", "0.1", "WTFPL",
-         "Puts URL into clipboard", "unload", "")
+         "Selects URL in a buffer and copy it into clipboard/tmux paste buffer " ..
+         "or execute external command on it",
+         "unload", "")
 
       local total_external_commands = load_config()
       w.bar_item_new(SCRIPT_NAME, "bar_item_cb", "")
@@ -98,22 +76,17 @@ function setup()
          SCRIPT_NAME,
          "Select URL in a buffer and copy it into X clipboard or Tmux buffer",
 
-         "[all|prev|next|switch|exec|copy|cancel]",
+         "[all]",
 
-         "all        : Include all URLs in selection\n" ..
-         "prev       : Select previous URL\n" ..
-         "next       : Select next URL\n" ..
-         "switch     : Switch selection mode\n" ..
-         "exec       : Execute external command\n" ..
-         "copy       : Copy currently selected URL\n" ..
-         "cancel     : Cancel URL selection\n\n" ..
+         "all        : Include all URLs in selection\n\n" ..
          "KEYS\n\n" ..
          "Up/Down    : Select previous/next URL\n" ..
          "Tab        : Switch selection mode\n" ..
          "Enter      : Copy currently selected URL\n" ..
+         "0-9        : Call external command\n" ..
          "Ctrl-C     : Cancel URL selection\n\n",
 
-         "all || prev || next || switch || exec || copy || cancel",
+         "all",
 
          "main_command_cb",
          "")
@@ -147,9 +120,30 @@ function setup()
 end
 
 function load_config()
+   if valid_modes.primary then -- check if xclip is enabled
+      local opt = w.config_get_plugin("enable_secondary_mode")
+      local enable_secondary = false
+      if not opt or opt == "" or (opt ~= "yes" and opt ~= "no") then
+         w.config_set_plugin("enable_secondary_mode", "no")
+         w.config_set_desc_plugin(
+            "enable_secondary_mode",
+            "Enable X selection's secondary mode (default: no)")
+      else
+         enable_secondary = (opt == "yes")
+      end
+      if enable_secondary then
+         table.insert(mode_order, "secondary")
+         valid_modes.secondary = #mode_order
+      end
+   end
+
    local opt = w.config_get_plugin("mode")
    if not opt or opt == "" or not valid_modes[opt] then
       w.config_set_plugin("mode", mode_order[1])
+      w.config_set_desc_plugin(
+         "mode",
+         "Default mode to use. Valid values are: primary, clipboard, " ..
+         "tmux, secondary (default: primary)")
       current_mode = mode_order[1]
    else
       current_mode = opt
@@ -158,6 +152,9 @@ function load_config()
    opt = w.config_get_plugin("ignore_copied_url")
    if not opt or opt == "" or (opt ~= "yes" and opt ~= "no") then
       w.config_set_plugin("ignore_copied_url", "yes")
+      w.config_set_desc_plugin(
+         "ignore_copied_url",
+         "Ignore copied URL the next time /urlselect called (default: yes)")
    else
       ignore_copied_url = (opt == "yes")
    end
@@ -165,9 +162,20 @@ function load_config()
    opt = w.config_get_plugin("noisy")
    if not opt or opt == "" or (opt ~= "yes" and opt ~= "no") then
       w.config_set_plugin("noisy", "yes")
+      w.config_set_desc_plugin(
+         "noisy",
+         "Prints unnecessary information (default: yes)")
    else
       noisy = (opt == "yes")
    end
+
+   local color_descriptions = {
+      default_color = "Default text color",
+      key_color = "Color for shortcut keys",
+      index_color = "Color for URL index",
+      url_color = "Color for selected URL",
+      mode_color = "Color for current active mode"
+   }
 
    for name, value in pairs(colors) do
       local opt_name = name .. "_color"
@@ -175,9 +183,18 @@ function load_config()
 
       if not opt_value or opt_value == "" then
          w.config_set_plugin(opt_name, value)
+         w.config_set_desc_plugin(opt_name, color_descriptions[opt_name])
       else
          colors[name] = opt_value
       end
+   end
+
+   if w.config_is_set_plugin("ext_cmd_1") ~= 1 then
+      w.config_set_plugin("ext_cmd_1", "xdg-open")
+      w.config_set_desc_plugin(
+         "ext_cmd_1",
+         "External command that will be executed when " ..
+         "key 1 pressed during URL selection")
    end
 
    local cmd_count = 0
@@ -189,6 +206,8 @@ function load_config()
          cmd_count = cmd_count +1
       end
    end
+
+
    return cmd_count
 end
 
@@ -413,6 +432,9 @@ function run_external(index)
    if external_commands[index] then
       local url = get_url()
       if url and url ~= "" then
+         if ignore_copied_url then
+            copied_urls[url] = true
+         end
          local command = external_commands[index] .. " " .. escape_url(url)
          w.hook_process(command, 0, "run_external_cb", "")
          return w.WEECHAT_RC_OK
