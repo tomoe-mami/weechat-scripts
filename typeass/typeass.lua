@@ -68,6 +68,9 @@ function mark_ticks(text)
    -- mark url with ticks
    text = pcre.gsub(text, "([[:alnum:]-]+://\\S+)", "`%1`", nil, utf8_flag)
 
+   -- mark s/pattern/replacement/ with ticks
+   text = pcre.gsub(text, "^(s/.+?/.+?/)$", "`%1`", nil, utf8_flag)
+
    return pcre.gsub(text, "`([^`]+)`", function (match)
       index = index + 1
       placeholders[index] = match
