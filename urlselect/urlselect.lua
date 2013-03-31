@@ -77,9 +77,11 @@ function setup()
          SCRIPT_NAME,
          "Select URL in a buffer and copy it into X clipboard or Tmux buffer",
 
-         "[all]",
+         "[all|bind|unbind]",
 
-         "all        : Include all URLs in selection\n\n" ..
+         "all        : Include all URLs in selection\n" ..
+         "bind       : Bind an external command to a key (0-9)\n" ..
+         "unbind     : Unbind a key\n\n" ..
          "KEYS\n\n" ..
          "Up/Down    : Select previous/next URL\n" ..
          "Tab        : Switch selection mode\n" ..
@@ -88,7 +90,7 @@ function setup()
          "0-9        : Call external command\n" ..
          "Ctrl-C     : Cancel URL selection\n\n",
 
-         "all",
+         "all || bind || unbind",
 
          "main_command_cb",
          "")
@@ -215,7 +217,7 @@ function load_config()
       if opt_value and opt_value ~= "" then
          external_commands[index] = opt_value
          key_bindings[index] = "/" .. SCRIPT_NAME .. " exec " .. index
-         cmd_count = cmd_count +1
+         cmd_count = cmd_count + 1
       end
    end
 
@@ -235,11 +237,19 @@ function unload()
 end
 
 function main_command_cb(data, buffer, arg)
+   local op, param = arg:match("^([^ \t]+)[ \t]*(.*)$")
    if not active_buffer then
-      active_buffer = buffer
-      start_url_selection(arg == "all")
+      if op == "bind" then
+         bind_key(param, true)
+      elseif op == "unbind" then
+         bind_key(param, false)
+      elseif op == "flush" then
+         copied_urls = {}
+      else
+         active_buffer = buffer
+         start_url_selection(op == "all")
+      end
    else
-      local op, param = arg:match("^([^ \t]+)[ \t]*(.*)$")
       if op == "prev" then
          select_url(-1)
       elseif op == "next" then
@@ -291,25 +301,18 @@ function finish_url_selection()
 end
 
 function bar_item_cb(data, item, window)
-   local mode_label = {
-      primary = "x sel primary",
-      secondary = "x sel secondary",
-      clipboard = "x sel clipboard",
-      tmux = "tmux buffer"
-   }
-
    if url_list and url_index and url_index ~= 0 and url_list[url_index] then
       local text = string.format("%s%s: %s%s",
          w.color(colors.default),
          SCRIPT_NAME,
          w.color(colors.mode),
-         mode_label[current_mode])
+         current_mode)
 
       if show_keys then
          text = text ..
                 string.format(
                   " %s<%sup%s> prev <%sdown%s> next <%stab%s> mode " ..
-                  "<%sctrl-c%s> cancel <%senter%s> ok",
+                  "<%sctrl-c%s> cancel <%senter%s> copy",
                   w.color(colors.default),
                   w.color(colors.key),
                   w.color(colors.default),
@@ -322,26 +325,19 @@ function bar_item_cb(data, item, window)
                   w.color(colors.key),
                   w.color(colors.default))
 
-         if external_commands[0] then
-            text = text ..
-                   string.format(
-                     " %s<%s%d%s> %s",
-                     w.color(colors.default),
-                     w.color(colors.key),
-                     0,
-                     w.color(colors.default),
-                     external_commands[0])
+         for index = 0, 9 do
+            if external_commands[index] then
+               text = text ..
+                      string.format(
+                        " %s<%s%d%s> %s",
+                        w.color(colors.default),
+                        w.color(colors.key),
+                        index,
+                        w.color(colors.default),
+                        external_commands[index])
+            end
          end
-         for index, command in ipairs(external_commands) do
-            text = text ..
-                   string.format(
-                     " %s<%s%d%s> %s",
-                     w.color(colors.default),
-                     w.color(colors.key),
-                     index,
-                     w.color(colors.default),
-                     command)
-         end
+
       end
       text = text ..
              string.format(
@@ -363,6 +359,80 @@ end
 function toggle_key_help()
    show_keys = not show_keys
    w.bar_item_update(SCRIPT_NAME)
+end
+
+function bind_key(param, flag)
+   if not param or param == "" then
+      list_ext_commands()
+      return w.WEECHAT_RC_OK
+   else
+      local key, command = param:match("^(%d)[ \t]*(.*)")
+      if not key then
+         message("Please specify a key (0-9)")
+         return w.WEECHAT_RC_ERROR
+      end
+
+      key = tonumber(key)
+      if flag then
+         return set_ext_command(key, command)
+      else
+         return unset_ext_command(key)
+      end
+   end
+end
+
+function list_ext_commands()
+   message("External Commands:")
+   for index = 0, 9 do
+      if external_commands[index] then
+         message(string.format("%s%d%s: %s",
+            w.color(colors.key),
+            index,
+            w.color(colors.default),
+            external_commands[index]))
+      end
+   end
+end
+
+function set_ext_command(key, command)
+   if not command or command == "" then
+      message("You must specify a command")
+      return w.WEECHAT_RC_ERROR
+   end
+
+   local opt_name = "ext_cmd_" .. key
+   w.config_set_plugin(opt_name, command)
+   w.config_set_desc_plugin(
+      opt_name,
+      "External command that will be executed when " ..
+      "key " .. key .. " pressed during URL selection")
+   if not external_commands[key] then
+      external_commands[key] = command
+      key_bindings[key] = "/" .. SCRIPT_NAME .. " exec " .. key
+   end
+   if noisy then
+      message(string.format("Key %d bound to `%s`", key, command))
+   end
+   return w.WEECHAT_RC_OK
+end
+
+function unset_ext_command(key)
+   if external_commands[key] then
+      external_commands[key] = nil
+      key_bindings[key] = nil
+   end
+   local opt_name = "ext_cmd_" .. key
+   if w.config_is_set_plugin(opt_name) == 1 then
+      if key == 1 then
+         w.config_set_plugin(opt_name, "")
+      else
+         w.config_unset_plugin(opt_name)
+      end
+   end
+   if noisy then
+      message(string.format("Key %d unbound", key, command))
+   end
+   return w.WEECHAT_RC_OK
 end
 
 function switch_mode(param)
