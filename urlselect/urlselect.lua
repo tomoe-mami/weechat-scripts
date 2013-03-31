@@ -18,7 +18,7 @@
 local SCRIPT_NAME = "urlselect"
 local w = weechat
 
-local active_buffer, noisy, show_keys = false, true, true
+local active_buffer, noisy, show_keys = false, false, true
 local ignore_copied_url, copied_urls = true, {}
 local url_list, url_index = {}, 0
 
@@ -163,10 +163,10 @@ function load_config()
 
    opt = w.config_get_plugin("noisy")
    if not opt or opt == "" or (opt ~= "yes" and opt ~= "no") then
-      w.config_set_plugin("noisy", "yes")
+      w.config_set_plugin("noisy", "no")
       w.config_set_desc_plugin(
          "noisy",
-         "Prints unnecessary information (default: yes)")
+         "Prints unnecessary information (default: no)")
    else
       noisy = (opt == "yes")
    end
@@ -321,6 +321,27 @@ function bar_item_cb(data, item, window)
                   w.color(colors.default),
                   w.color(colors.key),
                   w.color(colors.default))
+
+         if external_commands[0] then
+            text = text ..
+                   string.format(
+                     " %s<%s%d%s> %s",
+                     w.color(colors.default),
+                     w.color(colors.key),
+                     0,
+                     w.color(colors.default),
+                     external_commands[0])
+         end
+         for index, command in ipairs(external_commands) do
+            text = text ..
+                   string.format(
+                     " %s<%s%d%s> %s",
+                     w.color(colors.default),
+                     w.color(colors.key),
+                     index,
+                     w.color(colors.default),
+                     command)
+         end
       end
       text = text ..
              string.format(
