@@ -16,8 +16,12 @@ Here's a screenshot of it:
 
 This script requires [xclip][] or [tmux][].
 
+Other than copying URL, you can also bind external command to keys `0`-`9` (see
+**Options** below). The command will be executed when you press the key during
+URL selection.
+
 [xclip]: http://sourceforge.net/projects/xclip/
-[screenshot]: http://i.imgur.com/6cYTzLr.png
+[screenshot]: http://i.imgur.com/GkhibXW.png
 [tmux]: http://tmux.sourceforge.net/
 
 Options
@@ -43,6 +47,8 @@ Options
   This option can be used to bind an external command to key 0-9 (replace the
   **?** on the option name with the key you want to bind). The selected URL will
   be appended to the command before executing it.
+
+  Key `1` is bound to `xdg-open` by default.
 
 - **plugins.var.lua.urlselect.default_color** (default: **gray**)
 

@@ -18,7 +18,7 @@
 local SCRIPT_NAME = "urlselect"
 local w = weechat
 
-local active_buffer, noisy = false, true
+local active_buffer, noisy, show_keys = false, true, true
 local ignore_copied_url, copied_urls = true, {}
 local url_list, url_index = {}, 0
 
@@ -32,6 +32,7 @@ local key_bindings = {
    ["meta2-C"] = "/" .. SCRIPT_NAME .. " switch next",    -- right
    ["meta2-Z"] = "/" .. SCRIPT_NAME .. " switch prev",    -- shift-tab
    ["meta2-D"] = "/" .. SCRIPT_NAME .. " switch prev",    -- left
+   ["?"]       = "/" .. SCRIPT_NAME .. " keys",           -- ?
    ["ctrl-M"]  = "/" .. SCRIPT_NAME .. " copy",           -- enter
    ["ctrl-C"]  = "/" .. SCRIPT_NAME .. " cancel"          -- ctrl-c
 }
@@ -82,6 +83,7 @@ function setup()
          "KEYS\n\n" ..
          "Up/Down    : Select previous/next URL\n" ..
          "Tab        : Switch selection mode\n" ..
+         "?          : Show keyboard shortcuts information\n" ..
          "Enter      : Copy currently selected URL\n" ..
          "0-9        : Call external command\n" ..
          "Ctrl-C     : Cancel URL selection\n\n",
@@ -169,6 +171,16 @@ function load_config()
       noisy = (opt == "yes")
    end
 
+   opt = w.config_get_plugin("show_keys")
+   if not opt or opt == "" or (opt ~= "yes" and opt ~= "no") then
+      w.config_set_plugin("show_keys", "yes")
+      w.config_set_desc_plugin(
+         "show_keys",
+         "Show keyboard shortcuts info when selecting URL (default: yes)")
+   else
+      show_keys = (opt == "yes")
+   end
+
    local color_descriptions = {
       default_color = "Default text color",
       key_color = "Color for shortcut keys",
@@ -212,9 +224,13 @@ function load_config()
 end
 
 function unload()
+   w.config_set_plugin("mode", current_mode)
+   w.config_set_plugin("show_keys", show_keys and "yes" or "no")
+
    if active_buffer then
       setup_key_bindings(false)
    end
+
    w.unhook_all()
 end
 
@@ -230,6 +246,8 @@ function main_command_cb(data, buffer, arg)
          select_url(1)
       elseif op == "switch" then
          switch_mode(param)
+      elseif op == "keys" then
+         toggle_key_help()
       elseif op == "exec" then
          local result = run_external(tonumber(param))
          finish_url_selection()
@@ -281,24 +299,49 @@ function bar_item_cb(data, item, window)
    }
 
    if url_list and url_index and url_index ~= 0 and url_list[url_index] then
-      return string.format(
-         "%surlselect: %s%s%s <%s↑%s> prev <%s↓%s> next <%stab%s> mode " ..
-         "<%s^c%s> cancel <%s↵%s> ok #%s%d%s: %s%s%s",
+      local text = string.format("%s%s: %s%s",
          w.color(colors.default),
+         SCRIPT_NAME,
          w.color(colors.mode),
-         mode_label[current_mode],
-         w.color(colors.default),
-         w.color(colors.key), w.color(colors.default),
-         w.color(colors.key), w.color(colors.default),
-         w.color(colors.key), w.color(colors.default),
-         w.color(colors.key), w.color(colors.default),
-         w.color(colors.key), w.color(colors.default),
-         w.color(colors.index), url_index, w.color(colors.default),
-         w.color(colors.url), url_list[url_index],
-         w.color(colors.default))
+         mode_label[current_mode])
+
+      if show_keys then
+         text = text ..
+                string.format(
+                  " %s<%sup%s> prev <%sdown%s> next <%stab%s> mode " ..
+                  "<%sctrl-c%s> cancel <%senter%s> ok",
+                  w.color(colors.default),
+                  w.color(colors.key),
+                  w.color(colors.default),
+                  w.color(colors.key),
+                  w.color(colors.default),
+                  w.color(colors.key),
+                  w.color(colors.default),
+                  w.color(colors.key),
+                  w.color(colors.default),
+                  w.color(colors.key),
+                  w.color(colors.default))
+      end
+      text = text ..
+             string.format(
+               " %s#%s%d%s: %s%s%s",
+               w.color(colors.default),
+               w.color(colors.index),
+               url_index,
+               w.color(colors.default),
+               w.color(colors.url),
+               url_list[url_index],
+               w.color(colors.default))
+
+      return text
    else
       return ""
    end
+end
+
+function toggle_key_help()
+   show_keys = not show_keys
+   w.bar_item_update(SCRIPT_NAME)
 end
 
 function switch_mode(param)
