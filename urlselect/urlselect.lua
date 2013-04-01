@@ -18,33 +18,25 @@
 local SCRIPT_NAME = "urlselect"
 local w = weechat
 
-local active_buffer, noisy, show_keys = false, false, true
-local ignore_copied_url, copied_urls = true, {}
-local url_list, url_index = {}, 0
-
-local valid_modes, mode_order, current_mode = {}, {}, ""
-local buf_switch_hook = ""
+local active_buffer = false
+local url = { list = {}, copied = {}, index = 0 }
+local mode = { valid = {}, order = {}, current = "" }
+local config = {}
 local external_commands = {}
 local key_bindings = {
-   ["meta2-A"] = "/" .. SCRIPT_NAME .. " prev",           -- up
-   ["meta2-B"] = "/" .. SCRIPT_NAME .. " next",           -- down
-   ["ctrl-I"]  = "/" .. SCRIPT_NAME .. " switch next",    -- tab
-   ["meta2-C"] = "/" .. SCRIPT_NAME .. " switch next",    -- right
-   ["meta2-Z"] = "/" .. SCRIPT_NAME .. " switch prev",    -- shift-tab
-   ["meta2-D"] = "/" .. SCRIPT_NAME .. " switch prev",    -- left
-   ["?"]       = "/" .. SCRIPT_NAME .. " keys",           -- ?
-   ["ctrl-M"]  = "/" .. SCRIPT_NAME .. " copy",           -- enter
-   ["ctrl-C"]  = "/" .. SCRIPT_NAME .. " cancel"          -- ctrl-c
+   ["meta2-A"]  = "prev",           -- up
+   ["meta2-B"]  = "next",           -- down
+   ["meta2-1~"] = "first",          -- home
+   ["meta2-4~"] = "last",           -- end
+   ["ctrl-I"]   = "switch next",    -- tab
+   ["meta2-C"]  = "switch next",    -- right
+   ["meta2-Z"]  = "switch prev",    -- shift-tab
+   ["meta2-D"]  = "switch prev",    -- left
+   ["?"]        = "keys",           -- ?
+   ["ctrl-M"]   = "copy",           -- enter
+   ["ctrl-C"]   = "cancel"          -- ctrl-c
 }
 
-
-local colors = {
-   default  = "gray",
-   key      = "yellow",
-   index    = "yellow",
-   url      = "lightblue",
-   mode     = "yellow"
-}
 
 function message(text)
    w.print("", SCRIPT_NAME .. "\t" .. text)
@@ -52,17 +44,17 @@ end
 
 function setup()
    if os.execute("type xclip >/dev/null 2>&1") == 0 then
-      mode_order = { "primary", "clipboard" }
-      valid_modes = { primary = 1, clipboard = 2 }
+      mode.order = { "primary", "clipboard" }
+      mode.valid = { primary = 1, clipboard = 2 }
    end
 
    local is_tmux = os.getenv("TMUX")
    if is_tmux and #is_tmux > 0 then
-      table.insert(mode_order, "tmux")
-      valid_modes.tmux = #mode_order
+      table.insert(mode.order, "tmux")
+      mode.valid.tmux = #mode.order
    end
 
-   if #mode_order < 1 then
+   if #mode.order < 1 then
       error("You need xclip and/or tmux to use this script.")
    else
       w.register(
@@ -95,26 +87,26 @@ function setup()
          "main_command_cb",
          "")
 
-      if noisy then
+      if config.noisy then
          local msg = string.format(
             "%sSetup complete. Ignore copied URL: %s%s%s. Noisy: %syes%s. " ..
             "%s%d%s external commands. Available modes:",
-            w.color(colors.default),
-            w.color(colors.key),
-            (ignore_copied_url and "yes" or "no"),
-            w.color(colors.default),
-            w.color(colors.key),
-            w.color(colors.default),
-            w.color(colors.key),
+            w.color(config.default_color),
+            w.color(config.key_color),
+            (config.ignore_copied_url and "yes" or "no"),
+            w.color(config.default_color),
+            w.color(config.key_color),
+            w.color(config.default_color),
+            w.color(config.key_color),
             total_external_commands,
-            w.color(colors.default))
+            w.color(config.default_color))
 
-         for index, name in ipairs(mode_order) do
-            local entry = string.format("%d.%s", index, name)
-            if name == current_mode then
-               entry = w.color(colors.key) ..
+         for index, name in ipairs(mode.order) do
+            local entry = string.format("%d. %s", index, name)
+            if name == mode.current then
+               entry = w.color(config.key_color) ..
                        entry ..
-                       w.color(colors.default)
+                       w.color(config.default_color)
             end
             msg = msg .. " " .. entry
          end
@@ -124,83 +116,90 @@ function setup()
 end
 
 function load_config()
-   if valid_modes.primary then -- check if xclip is enabled
-      local opt = w.config_get_plugin("enable_secondary_mode")
-      local enable_secondary = false
-      if not opt or opt == "" or (opt ~= "yes" and opt ~= "no") then
-         w.config_set_plugin("enable_secondary_mode", "no")
-         w.config_set_desc_plugin(
-            "enable_secondary_mode",
-            "Enable X selection's secondary mode (default: no)")
+   local options = {
+      ignore_copied_url = {
+         default = true,
+         description = "Ignore copied URL the next time /urlselect called"
+      },
+      noisy = {
+         default = false,
+         description = "Prints unnecessary information"
+      },
+      show_keys = {
+         default = true,
+         description = "Show keyboard shortcuts info when selecting URL"
+      },
+      show_nickname = {
+         default = false,
+         description = "Show nickname on selected URL"
+      },
+      enable_secondary_mode = {
+         default = false,
+         description = "Enable X selection's secondary mode"
+      },
+      default_color = {
+         default = "gray",
+         description = "Default text color"
+      },
+      key_color = {
+         default = "yellow",
+         description = "Color for shortcut keys"
+      },
+      index_color = {
+         default = "yellow",
+         description = "Color for URL index"
+      },
+      url_color = {
+         default = "lightblue",
+         description = "Color for selected URL"
+      },
+      mode_color = {
+         default = "yellow",
+         description = "Color for current mode"
+      },
+      nickname_color = {
+         default = "yellow",
+         description = "Color for nickname"
+      }
+   }
+
+   for name, info in pairs(options) do
+      local opt_type = type(info.default)
+      local value = w.config_get_plugin(name)
+      if opt_type == "boolean" then
+         if value ~= "yes" and value ~= "no" then
+            config[name] = info.default
+            w.config_set_plugin(name, info.default and "yes" or "no")
+            w.config_set_desc_plugin(name, info.description)
+         else
+            config[name] = (value == "yes")
+         end
       else
-         enable_secondary = (opt == "yes")
-      end
-      if enable_secondary then
-         table.insert(mode_order, "secondary")
-         valid_modes.secondary = #mode_order
+         if not value or value == "" then
+            config[name] = info.default
+            w.config_set_plugin(name, info.default)
+            w.config_set_desc_plugin(name, info.description)
+         else
+            config[name] = value
+         end
       end
    end
 
-   local opt = w.config_get_plugin("mode")
-   if not opt or opt == "" or not valid_modes[opt] then
-      w.config_set_plugin("mode", mode_order[1])
+   if config.enable_secondary_mode and valid_modes.primary then
+      table.insert(mode.order, "secondary")
+      valid_modes.secondary = #mode.order
+   end
+
+   local value = w.config_get_plugin("mode")
+   if not value or value == "" or not mode.valid[value] then
+      w.config_set_plugin("mode", mode.order[1])
       w.config_set_desc_plugin(
          "mode",
          "Default mode to use. Valid values are: primary, clipboard, " ..
-         "tmux, secondary (default: primary)")
-      current_mode = mode_order[1]
+         "tmux, secondary")
+      mode.current = mode.order[1]
    else
-      current_mode = opt
-   end
-
-   opt = w.config_get_plugin("ignore_copied_url")
-   if not opt or opt == "" or (opt ~= "yes" and opt ~= "no") then
-      w.config_set_plugin("ignore_copied_url", "yes")
-      w.config_set_desc_plugin(
-         "ignore_copied_url",
-         "Ignore copied URL the next time /urlselect called (default: yes)")
-   else
-      ignore_copied_url = (opt == "yes")
-   end
-
-   opt = w.config_get_plugin("noisy")
-   if not opt or opt == "" or (opt ~= "yes" and opt ~= "no") then
-      w.config_set_plugin("noisy", "no")
-      w.config_set_desc_plugin(
-         "noisy",
-         "Prints unnecessary information (default: no)")
-   else
-      noisy = (opt == "yes")
-   end
-
-   opt = w.config_get_plugin("show_keys")
-   if not opt or opt == "" or (opt ~= "yes" and opt ~= "no") then
-      w.config_set_plugin("show_keys", "yes")
-      w.config_set_desc_plugin(
-         "show_keys",
-         "Show keyboard shortcuts info when selecting URL (default: yes)")
-   else
-      show_keys = (opt == "yes")
-   end
-
-   local color_descriptions = {
-      default_color = "Default text color",
-      key_color = "Color for shortcut keys",
-      index_color = "Color for URL index",
-      url_color = "Color for selected URL",
-      mode_color = "Color for current active mode"
-   }
-
-   for name, value in pairs(colors) do
-      local opt_name = name .. "_color"
-      local opt_value = w.config_get_plugin(opt_name)
-
-      if not opt_value or opt_value == "" then
-         w.config_set_plugin(opt_name, value)
-         w.config_set_desc_plugin(opt_name, color_descriptions[opt_name])
-      else
-         colors[name] = opt_value
-      end
+      mode.current = value
    end
 
    if w.config_is_set_plugin("ext_cmd_1") ~= 1 then
@@ -216,18 +215,17 @@ function load_config()
       local opt_value = w.config_get_plugin("ext_cmd_" .. index)
       if opt_value and opt_value ~= "" then
          external_commands[index] = opt_value
-         key_bindings[index] = "/" .. SCRIPT_NAME .. " exec " .. index
+         key_bindings[index] = "exec " .. index
          cmd_count = cmd_count + 1
       end
    end
-
 
    return cmd_count
 end
 
 function unload()
-   w.config_set_plugin("mode", current_mode)
-   w.config_set_plugin("show_keys", show_keys and "yes" or "no")
+   w.config_set_plugin("mode", mode.current)
+   w.config_set_plugin("show_keys", config.show_keys and "yes" or "no")
 
    if active_buffer then
       setup_key_bindings(false)
@@ -244,7 +242,7 @@ function main_command_cb(data, buffer, arg)
       elseif op == "unbind" then
          bind_key(param, false)
       elseif op == "flush" then
-         copied_urls = {}
+         url.copied = {}
       else
          active_buffer = buffer
          start_url_selection(op == "all")
@@ -254,6 +252,8 @@ function main_command_cb(data, buffer, arg)
          select_url(-1)
       elseif op == "next" then
          select_url(1)
+      elseif op == "first" or op == "last" then
+         select_url(op)
       elseif op == "switch" then
          switch_mode(param)
       elseif op == "keys" then
@@ -282,58 +282,69 @@ end
 
 function start_url_selection(show_all)
    collect_urls(show_all)
-   if url_index > 0 then
+   if url.index > 0 then
       setup_key_bindings(true)
       w.bar_item_update(SCRIPT_NAME)
    end
    buf_switch_hook = w.hook_signal("buffer_switch", "buffer_switch_cb", "")
+   enter_key_hook = w.hook_command_run("/input return", "enter_key_cb", "")
+end
+
+function enter_key_cb(data, buffer, command)
+   w.buffer_set(buffer, "input", "")
+   return w.WEECHAT_RC_OK
 end
 
 function finish_url_selection()
    if active_buffer then
       setup_key_bindings(false)
-      url_list, url_index, active_buffer = nil, nil, nil
+      url.list, url.index, active_buffer = nil, nil, nil
       w.bar_item_update(SCRIPT_NAME)
       if buf_switch_hook ~= "" then
          w.unhook(buf_switch_hook)
+      end
+      if enter_key_hook ~= "" then
+         w.unhook(enter_key_hook)
       end
    end
 end
 
 function bar_item_cb(data, item, window)
-   if url_list and url_index and url_index ~= 0 and url_list[url_index] then
+   if url.list and url.index and url.index ~= 0 and url.list[url.index] then
       local text = string.format("%s%s: %s%s",
-         w.color(colors.default),
+         w.color(config.default_color),
          SCRIPT_NAME,
-         w.color(colors.mode),
-         current_mode)
+         w.color(config.mode_color),
+         mode.current)
 
-      if show_keys then
+      if config.show_keys then
          text = text ..
                 string.format(
-                  " %s<%sup%s> prev <%sdown%s> next <%stab%s> mode " ..
-                  "<%sctrl-c%s> cancel <%senter%s> copy",
-                  w.color(colors.default),
-                  w.color(colors.key),
-                  w.color(colors.default),
-                  w.color(colors.key),
-                  w.color(colors.default),
-                  w.color(colors.key),
-                  w.color(colors.default),
-                  w.color(colors.key),
-                  w.color(colors.default),
-                  w.color(colors.key),
-                  w.color(colors.default))
+                  " %s<%s?%s> hide keys <%sup%s> prev <%sdown%s> next " ..
+                  "<%stab%s> mode <%sctrl-c%s> cancel <%senter%s> copy",
+                  w.color(config.default_color),
+                  w.color(config.key_color),
+                  w.color(config.default_color),
+                  w.color(config.key_color),
+                  w.color(config.default_color),
+                  w.color(config.key_color),
+                  w.color(config.default_color),
+                  w.color(config.key_color),
+                  w.color(config.default_color),
+                  w.color(config.key_color),
+                  w.color(config.default_color),
+                  w.color(config.key_color),
+                  w.color(config.default_color))
 
          for index = 0, 9 do
             if external_commands[index] then
                text = text ..
                       string.format(
                         " %s<%s%d%s> %s",
-                        w.color(colors.default),
-                        w.color(colors.key),
+                        w.color(config.default_color),
+                        w.color(config.key_color),
                         index,
-                        w.color(colors.default),
+                        w.color(config.default_color),
                         external_commands[index])
             end
          end
@@ -342,13 +353,13 @@ function bar_item_cb(data, item, window)
       text = text ..
              string.format(
                " %s#%s%d%s: %s%s%s",
-               w.color(colors.default),
-               w.color(colors.index),
-               url_index,
-               w.color(colors.default),
-               w.color(colors.url),
-               url_list[url_index],
-               w.color(colors.default))
+               w.color(config.default_color),
+               w.color(config.index_color),
+               url.index,
+               w.color(config.default_color),
+               w.color(config.url_color),
+               url.list[url.index],
+               w.color(config.default_color))
 
       return text
    else
@@ -357,7 +368,7 @@ function bar_item_cb(data, item, window)
 end
 
 function toggle_key_help()
-   show_keys = not show_keys
+   config.show_keys = not config.show_keys
    w.bar_item_update(SCRIPT_NAME)
 end
 
@@ -386,9 +397,9 @@ function list_ext_commands()
    for index = 0, 9 do
       if external_commands[index] then
          message(string.format("%s%d%s: %s",
-            w.color(colors.key),
+            w.color(config.key_color),
             index,
-            w.color(colors.default),
+            w.color(config.default_color),
             external_commands[index]))
       end
    end
@@ -406,11 +417,12 @@ function set_ext_command(key, command)
       opt_name,
       "External command that will be executed when " ..
       "key " .. key .. " pressed during URL selection")
+
    if not external_commands[key] then
       external_commands[key] = command
       key_bindings[key] = "/" .. SCRIPT_NAME .. " exec " .. key
    end
-   if noisy then
+   if config.noisy then
       message(string.format("Key %d bound to `%s`", key, command))
    end
    return w.WEECHAT_RC_OK
@@ -429,7 +441,7 @@ function unset_ext_command(key)
          w.config_unset_plugin(opt_name)
       end
    end
-   if noisy then
+   if config.noisy then
       message(string.format("Key %d unbound", key, command))
    end
    return w.WEECHAT_RC_OK
@@ -438,11 +450,11 @@ end
 function switch_mode(param)
    if not param then param = "next" end
 
-   if valid_modes[param] then
-      current_mode = param
+   if mode.valid[param] then
+      mode.current = param
    else
-      local total = #mode_order
-      local current_index = valid_modes[current_mode]
+      local total = #mode.order
+      local current_index = mode.valid[mode.current]
 
       local new_index = current_index + (param == "next" and 1 or -1)
       if new_index > total then
@@ -451,79 +463,115 @@ function switch_mode(param)
          new_index = total
       end
 
-      local new_mode = current_mode
-      if mode_order[new_index] then
-         new_mode = mode_order[new_index]
-         if valid_modes[new_mode] then
-            current_mode = new_mode
+      local new_mode = mode.current
+      if mode.order[new_index] then
+         new_mode = mode.order[new_index]
+         if mode.valid[new_mode] then
+            mode.current = new_mode
          end
       end
    end
    w.bar_item_update(SCRIPT_NAME)
 end
 
-function setup_key_bindings(mode)
-   local prefix = mode and "key_bind_" or "key_unbind_"
-   for key, command in pairs(key_bindings) do
-      w.buffer_set(active_buffer, prefix .. key, mode and command or "")
+function setup_key_bindings(flag)
+   local prefix = flag and "key_bind_" or "key_unbind_"
+   local command
+   for key, param in pairs(key_bindings) do
+      if flag then
+         command = "/" .. SCRIPT_NAME .. " " .. param
+      else
+         command = ""
+      end
+      w.buffer_set(active_buffer, prefix .. key, command)
    end
 end
 
 function select_url(rel_pos)
-   local total = #url_list
+   local total = #url.list
    if total > 0 then
-      url_index = url_index + rel_pos
-      if url_index < 1 then
-         url_index = total
-      elseif url_index > total then
-         url_index = 1
+      if rel_pos == "first" then
+         url.index = 1
+      elseif rel_pos== "last" then
+         url.index = total
+      else
+         url.index = url.index + rel_pos
+         if url.index < 1 then
+            url.index = total
+         elseif url.index > total then
+            url.index = 1
+         end
       end
       w.bar_item_update(SCRIPT_NAME)
    end
+end
+
+function split_tags(text)
+   local tags = {}
+   if text and text ~= "" then
+      text:gsub("([^,]+)", function (s)
+         tags[s] = true
+      end)
+   end
+   return tags
 end
 
 function collect_urls(show_all)
    local buf_lines = w.infolist_get("buffer_lines", active_buffer, "")
    local exists = {}
 
-   url_list = {}
+   url.list = {}
    local pattern = "(%a[%w%+%.%-]+://[%w:!/#_~@&=,;%+%?%[%]%.%%%-]+)([^%s]*)"
+   local store_url = function (u)
+      if not config.show_all and
+         config.ignore_copied_url and
+         url.copied[u] then
+         return
+      end
+      if not exists[u] then
+         table.insert(url.list, u)
+         exists[u] = true
+      end
+   end
+
    while w.infolist_next(buf_lines) == 1 do
-      local message = w.infolist_string(buf_lines, "message")
-      local url, tail = w.string_remove_color(message, ""):match(pattern)
-      if url then
-         -- ugly workaround for wikimedia's "(stuff)" suffix on their URLs
-         if tail and tail ~= "" then
-            url = url .. (tail:match("^(%b())") or "")
-         end
-         local ignored = not show_all and ignore_copied_url and copied_urls[url]
-         if not ignored and not exists[url] then
-            table.insert(url_list, url)
-            exists[url] = true
+      local is_displayed = w.infolist_integer(buf_lines, "displayed")
+      if is_displayed == 1 then
+         local tags = split_tags(w.infolist_string(buf_lines, "tags"))
+         if tags.irc_privmsg then
+            local line = w.infolist_string(buf_lines, "message")
+            local found, tail = w.string_remove_color(line, ""):match(pattern)
+            if found then
+               -- ugly workaround for wikimedia's "(stuff)" suffix on their URLs
+               if tail and tail ~= "" then
+                  found = found .. (tail:match("^(%b())") or "")
+               end
+               store_url(found)
+            end
          end
       end
    end
 
    w.infolist_free(buf_lines)
-   url_index = #url_list
+   url.index = #url.list
 end
 
-function get_url(url)
-   if not url or url == "" then
-      if url_index and url_list and url_list[url_index] then
-         url = url_list[url_index]
+function get_url(u)
+   if not u or u == "" then
+      if url.index and url.list and url.list[url.index] then
+         u = url.list[url.index]
       end
    end
-   return url
+   return u
 end
 
-function copy_url(url)
-   url = get_url(url)
-   if url and url ~= "" then
-      local cb = (current_mode == "tmux" and copy_into_tmux or copy_into_xsel)
-      if cb(url) then
-         if ignore_copied_url then
-            copied_urls[url] = true
+function copy_url(u)
+   u = get_url(u)
+   if u and u ~= "" then
+      local cb = (mode.current == "tmux" and copy_into_tmux or copy_into_xsel)
+      if cb(u) then
+         if config.ignore_copied_url and not url.copied[u] then
+            url.copied[u] = true
          end
          return w.WEECHAT_RC_OK
       else
@@ -535,41 +583,41 @@ function copy_url(url)
    end
 end
 
-function copy_into_xsel(url)
-   local fp = io.popen("xclip -selection " .. current_mode, "w")
+function copy_into_xsel(u)
+   local fp = io.popen("xclip -selection " .. mode.current, "w")
    if not fp then
       message("Unable to run `xclip`")
       return false
    end
-   fp:write(url)
+   fp:write(u)
    fp:close()
 
-   if noisy then
-      message(string.format("Copied into %s selection: %s", current_mode, url))
+   if config.noisy then
+      message(string.format("Copied into %s selection: %s", mode.current, u))
    end
    return true
 end
 
-function escape_url(url)
-   return url:gsub("([^%w])", "\\%1")
+function escape_url(u)
+   return u:gsub("([^%w])", "\\%1")
 end
 
-function copy_into_tmux(url)
-   local command = "tmux set-buffer " .. escape_url(url)
+function copy_into_tmux(u)
+   local command = "tmux set-buffer " .. escape_url(u)
    w.hook_process(
       command, 0, "run_external_cb",
-      "Copied into tmux buffer: " .. url)
+      "Copied into tmux buffer: " .. u)
    return true
 end
 
 function run_external(index)
    if external_commands[index] then
-      local url = get_url()
-      if url and url ~= "" then
-         if ignore_copied_url then
-            copied_urls[url] = true
+      local u = get_url()
+      if u and u ~= "" then
+         if config.ignore_copied_url and not url.copied[u] then
+            url.copied[u] = true
          end
-         local command = external_commands[index] .. " " .. escape_url(url)
+         local command = external_commands[index] .. " " .. escape_url(u)
          w.hook_process(command, 0, "run_external_cb", "")
          return w.WEECHAT_RC_OK
       end
