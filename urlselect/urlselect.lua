@@ -289,12 +289,6 @@ function start_url_selection(show_all)
       w.bar_item_update(SCRIPT_NAME)
    end
    buf_switch_hook = w.hook_signal("buffer_switch", "buffer_switch_cb", "")
-   enter_key_hook = w.hook_command_run("/input return", "enter_key_cb", "")
-end
-
-function enter_key_cb(data, buffer, command)
-   w.buffer_set(buffer, "input", "")
-   return w.WEECHAT_RC_OK
 end
 
 function finish_url_selection()
@@ -304,9 +298,6 @@ function finish_url_selection()
       w.bar_item_update(SCRIPT_NAME)
       if buf_switch_hook ~= "" then
          w.unhook(buf_switch_hook)
-      end
-      if enter_key_hook ~= "" then
-         w.unhook(enter_key_hook)
       end
    end
 end
