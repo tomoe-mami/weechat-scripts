@@ -285,10 +285,20 @@ end
 function start_url_selection(show_all)
    collect_urls(show_all)
    if url.index > 0 then
-      setup_key_bindings(true)
-      w.bar_item_update(SCRIPT_NAME)
+      orig_bar_items = w.config_string(w.config_get("weechat.bar.input.items"))
+      input_bar = w.bar_search("input")
+
+      if input_bar and input_bar ~= "" then
+         -- if i didn't include input_text, the cursor position will stay in
+         -- current position.
+         w.bar_set(input_bar, "items", "urlselect,input_text")
+         setup_key_bindings(true)
+         w.bar_item_update(SCRIPT_NAME)
+         buf_switch_hook = w.hook_signal("buffer_switch", "buffer_switch_cb", "")
+      else
+         finish_url_selection()
+      end
    end
-   buf_switch_hook = w.hook_signal("buffer_switch", "buffer_switch_cb", "")
 end
 
 function finish_url_selection()
@@ -296,8 +306,12 @@ function finish_url_selection()
       setup_key_bindings(false)
       url.list, url.index, active_buffer = nil, nil, nil
       w.bar_item_update(SCRIPT_NAME)
-      if buf_switch_hook ~= "" then
-         w.unhook(buf_switch_hook)
+
+      if input_bar and input_bar ~= "" then
+         w.bar_set(input_bar, "items", orig_bar_items)
+         if buf_switch_hook ~= "" then
+            w.unhook(buf_switch_hook)
+         end
       end
    end
 end
