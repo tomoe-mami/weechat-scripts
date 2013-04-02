@@ -243,6 +243,8 @@ function main_command_cb(data, buffer, arg)
          bind_key(param, false)
       elseif op == "flush" then
          url.copied = {}
+      elseif op == "copy" then
+         return copy_url(param)
       else
          active_buffer = buffer
          start_url_selection(op == "all")
@@ -351,15 +353,24 @@ function bar_item_cb(data, item, window)
 
       end
       text = text ..
-             string.format(
-               " %s#%s%d%s: %s%s%s",
-               w.color(config.default_color),
-               w.color(config.index_color),
-               url.index,
-               w.color(config.default_color),
-               w.color(config.url_color),
-               url.list[url.index],
-               w.color(config.default_color))
+             w.color(config.default_color) ..
+             " #" ..
+             w.color(config.index_color) ..
+             url.index ..
+             w.color(config.default_color) ..
+             ": "
+
+      if config.show_nickname then
+         text = text ..
+                w.color(config.nickname_color) ..
+                url.list[url.index][2] ..
+                w.color(config.default_color) ..
+                ": "
+      end
+
+      text = text ..
+             w.color(config.url_color) ..
+             url.list[url.index][1]
 
       return text
    else
@@ -506,14 +517,18 @@ function select_url(rel_pos)
    end
 end
 
-function split_tags(text)
-   local tags = {}
-   if text and text ~= "" then
-      text:gsub("([^,]+)", function (s)
+function get_tags_and_nickname(infolist)
+   local tag_string = w.infolist_string(infolist, "tags")
+   local tags, nickname = {}, "-"
+   if tag_string and tag_string ~= "" then
+      tag_string:gsub("([^,]+)", function (s)
          tags[s] = true
+         if s:sub(1, 5) == "nick_" then
+            nickname = s:sub(6)
+         end
       end)
    end
-   return tags
+   return tags, nickname
 end
 
 function collect_urls(show_all)
@@ -522,14 +537,14 @@ function collect_urls(show_all)
 
    url.list = {}
    local pattern = "(%a[%w%+%.%-]+://[%w:!/#_~@&=,;%+%?%[%]%.%%%-]+)([^%s]*)"
-   local store_url = function (u)
-      if not config.show_all and
+   local store_url = function (u, nick)
+      if not show_all and
          config.ignore_copied_url and
          url.copied[u] then
          return
       end
       if not exists[u] then
-         table.insert(url.list, u)
+         table.insert(url.list, { u, nick })
          exists[u] = true
       end
    end
@@ -537,7 +552,7 @@ function collect_urls(show_all)
    while w.infolist_next(buf_lines) == 1 do
       local is_displayed = w.infolist_integer(buf_lines, "displayed")
       if is_displayed == 1 then
-         local tags = split_tags(w.infolist_string(buf_lines, "tags"))
+         local tags, nickname = get_tags_and_nickname(buf_lines)
          if tags.irc_privmsg then
             local line = w.infolist_string(buf_lines, "message")
             local found, tail = w.string_remove_color(line, ""):match(pattern)
@@ -546,7 +561,7 @@ function collect_urls(show_all)
                if tail and tail ~= "" then
                   found = found .. (tail:match("^(%b())") or "")
                end
-               store_url(found)
+               store_url(found, nickname)
             end
          end
       end
@@ -559,7 +574,7 @@ end
 function get_url(u)
    if not u or u == "" then
       if url.index and url.list and url.list[url.index] then
-         u = url.list[url.index]
+         u = url.list[url.index][1]
       end
    end
    return u
