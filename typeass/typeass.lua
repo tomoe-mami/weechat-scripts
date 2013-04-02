@@ -7,7 +7,7 @@
 
    Author: rumia <https://github.com/rumia>
    License: WTFPL
-   Requires: lrexlib-pcre and snlunicode
+   Requires: lrexlib-pcre and slnunicode
 --]]
 
 local pcre = require "rex_pcre"
@@ -17,29 +17,42 @@ local utf8_flag = pcre.flags().UTF8
 local buffer_mask = "*,!*.nickserv,!*.chanserv"
 local placeholders = {}
 local nick_completion_char = ":"
+
+function u(...)
+   local result = ""
+   for _, c in ipairs(arg) do
+      if type(c) == "number" then
+         c = unicode.utf8.char(c)
+      end
+      result = result .. c
+   end
+   return result
+end
+
 local replacements = {
-   { "\"([^\"]+)\"",          "\226\128\156%1\226\128\157" },
-   { "\\.{3,}",               "\226\128\166" },
-   { "-{3}",                  "\226\128\148" },
-   { "-{2}",                  "\226\128\147" },
-   { "<-",                    "\226\134\144" },
-   { "->",                    "\226\134\146" },
-   { "<<",                    "\194\171" },
-   { ">>",                    "\194\187" },
-   { "\\+-",                  "\194\177" },
-   { "=/=",                   "\226\137\160" },
-   { "<=",                    "\226\137\164" },
-   { ">=",                    "\226\137\165" },
-   { "(\\d+)\\s*x\\s*(\\d+)", "%1 \195\151 %2" },
-   { "(?i:\\(r\\))",          "\194\174" },
-   { "(?i:\\(c\\))",          "\194\169" },
-   { "(?i:\\(tm\\))",         "\226\132\162" },
+   { "\"([^\"]+)\"",          u(0x201c, "%1", 0x201d) },
+   { "\\.{3,}",               u(0x2026) },
+   { "-{3}",                  u(0x2014) },
+   { "-{2}",                  u(0x2013) },
+   { "<-",                    u(0x2190) },
+   { "->",                    u(0x2192) },
+   { "<<",                    u(0x00ab) },
+   { ">>",                    u(0x00bb) },
+   { "\\+-",                  u(0x00b1) },
+   { "=/=",                   u(0x2260) },
+   { "<=",                    u(0x2264) },
+   { ">=",                    u(0x2265) },
+   { "(\\d+)\\s*x\\s*(\\d+)", u("%1", 0x00d7, "%2") },
+   { "(?i:\\(r\\))",          u(0x00ae) },
+   { "(?i:\\(c\\))",          u(0x00a9) },
+   { "(?i:\\(tm\\))",         u(0x2122) },
    { "([\\pL\\pN])$",         "%1." },
    { "^\\s*\\p{Ll}",          unicode.utf8.upper },
    { "[.?!]\\s+\\p{Ll}",      unicode.utf8.upper },
    { "\\s+i\\b",              unicode.utf8.upper },
-   { "(\\d+)deg\\b",          "%1\194\176" }
+   { "(\\d+)deg\\b",          u("%1", 0x00b0) }
 }
+
 
 function setup()
    weechat.register(
