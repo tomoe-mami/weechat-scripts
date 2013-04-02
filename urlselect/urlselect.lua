@@ -618,12 +618,8 @@ function copy_into_xsel(u)
    return true
 end
 
-function escape_url(u)
-   return u:gsub("([^%w])", "\\%1")
-end
-
 function copy_into_tmux(u)
-   local command = "tmux set-buffer " .. escape_url(u)
+   local command = string.format("tmux set-buffer %q", u)
    w.hook_process(
       command, 0, "run_external_cb",
       "Copied into tmux buffer: " .. u)
@@ -637,7 +633,7 @@ function run_external(index)
          if config.ignore_copied_url and not url.copied[u] then
             url.copied[u] = true
          end
-         local command = external_commands[index] .. " " .. escape_url(u)
+         local command = string.format("%s %q", external_commands[index], u)
          w.hook_process(command, 0, "run_external_cb", "")
          return w.WEECHAT_RC_OK
       end
