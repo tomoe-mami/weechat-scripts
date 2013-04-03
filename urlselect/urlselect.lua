@@ -158,8 +158,9 @@ function load_config()
          description = "Color for current mode"
       },
       nickname_color = {
-         default = "yellow",
-         description = "Color for nickname"
+         default = "",
+         description = "Color for nickname (set to empty string to use " ..
+                       "Weechat nick color)"
       }
    }
 
@@ -366,9 +367,15 @@ function bar_item_cb(data, item, window)
              ": "
 
       if config.show_nickname then
+         local color = config.nickname_color
+         local nick = url.list[url.index][2]
+         if color == "" then
+            color = w.info_get("irc_nick_color_name", nick)
+         end
+
          text = text ..
-                w.color(config.nickname_color) ..
-                url.list[url.index][2] ..
+                w.color(color) ..
+                nick ..
                 w.color(config.default_color) ..
                 ": "
       end

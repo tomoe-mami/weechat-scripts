@@ -74,3 +74,8 @@ Options
 
   Colors for selected URL.
 
+- **plugins.var.lua.urlselect.nickname_color** (default: none)
+
+  Colors for nickname. If set to empty string, will use nick color assigned by
+  Weechat.
+
