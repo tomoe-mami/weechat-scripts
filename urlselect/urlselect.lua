@@ -252,9 +252,9 @@ function main_command_cb(data, buffer, arg)
       end
    else
       if op == "prev" then
-         select_url(-1)
-      elseif op == "next" then
          select_url(1)
+      elseif op == "next" then
+         select_url(-1)
       elseif op == "first" or op == "last" then
          select_url(op)
       elseif op == "switch" then
@@ -561,14 +561,15 @@ function collect_urls(show_all)
       end
    end
 
-   while w.infolist_next(buf_lines) == 1 do
+   w.infolist_prev(buf_lines)
+   while w.infolist_prev(buf_lines) == 1 do
       local is_displayed = w.infolist_integer(buf_lines, "displayed")
       if is_displayed == 1 then
          local tags, nickname = get_tags_and_nickname(buf_lines)
          if tags.irc_privmsg then
             local line = w.infolist_string(buf_lines, "message")
-            local found, tail = w.string_remove_color(line, ""):match(pattern)
-            if found then
+            line = w.string_remove_color(line, "")
+            for found, tail in line:gmatch(pattern) do
                -- ugly workaround for wikimedia's "(stuff)" suffix on their URLs
                if tail and tail ~= "" then
                   found = found .. (tail:match("^(%b())") or "")
@@ -580,7 +581,7 @@ function collect_urls(show_all)
    end
 
    w.infolist_free(buf_lines)
-   url.index = #url.list
+   url.index = url.list[1] and 1 or 0
 end
 
 function get_url(u)
