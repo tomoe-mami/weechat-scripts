@@ -87,6 +87,10 @@ function setup()
          "main_command_cb",
          "")
 
+      if config.exp_time > 0 then
+         w.hook_timer(config.exp_time * 1000, 60, 0, "cleanup_copied_urls", "")
+      end
+
       if config.noisy then
          local msg = string.format(
             "%sSetup complete. Ignore copied URL: %s%s%s. Noisy: %syes%s. " ..
@@ -161,6 +165,10 @@ function load_config()
          default = "",
          description = "Color for nickname (set to empty string to use " ..
                        "Weechat nick color)"
+      },
+      exp_time = {
+         default = 2 * 60 * 60,
+         description = "How long (in seconds) a URL should be kept in copied URL list"
       }
    }
 
@@ -174,6 +182,14 @@ function load_config()
             w.config_set_desc_plugin(name, info.description)
          else
             config[name] = (value == "yes")
+         end
+      elseif opt_type == "number" then
+         if not value or value == "" then
+            config[name] = info.default
+            w.config_set_plugin(name, info.default)
+            w.config_set_desc_plugin(name, info.description)
+         else
+            config[name] = tonumber(value)
          end
       else
          if not value or value == "" then
@@ -204,7 +220,7 @@ function load_config()
    end
 
    if w.config_is_set_plugin("ext_cmd_1") ~= 1 then
-      w.config_set_plugin("ext_cmd_1", "xdg-open")
+      w.config_set_plugin("ext_cmd_1", "xdg-open %q")
       w.config_set_desc_plugin(
          "ext_cmd_1",
          "External command that will be executed when " ..
@@ -543,6 +559,23 @@ function get_tags_and_nickname(infolist)
    return tags, nickname
 end
 
+function cleanup_copied_urls()
+   local limit = os.time() - config.exp_time
+   local temp = {}
+   local removed = 0
+   for u, t in pairs(url.copied) do
+      if t >= limit then
+         temp[u] = t
+      else
+         removed = removed + 1
+      end
+   end
+   url.copied = temp
+   if config.noisy and removed > 0 then
+      message(removed .. " URLs removed")
+   end
+end
+
 function collect_urls(show_all)
    local buf_lines = w.infolist_get("buffer_lines", active_buffer, "")
    local exists = {}
@@ -561,12 +594,11 @@ function collect_urls(show_all)
       end
    end
 
-   w.infolist_prev(buf_lines)
-   while w.infolist_prev(buf_lines) == 1 do
+   local process_line = function ()
       local is_displayed = w.infolist_integer(buf_lines, "displayed")
       if is_displayed == 1 then
          local tags, nickname = get_tags_and_nickname(buf_lines)
-         if tags.irc_privmsg then
+         if tags.irc_privmsg or tags.irc_notice then
             local line = w.infolist_string(buf_lines, "message")
             line = w.string_remove_color(line, "")
             for found, tail in line:gmatch(pattern) do
@@ -578,6 +610,12 @@ function collect_urls(show_all)
             end
          end
       end
+   end
+
+   w.infolist_prev(buf_lines)
+   process_line()
+   while w.infolist_prev(buf_lines) == 1 do
+      process_line()
    end
 
    w.infolist_free(buf_lines)
@@ -593,13 +631,17 @@ function get_url(u)
    return u
 end
 
+function mark_url_as_copied(u)
+   url.copied[u] = os.time()
+end
+
 function copy_url(u)
    u = get_url(u)
    if u and u ~= "" then
       local cb = (mode.current == "tmux" and copy_into_tmux or copy_into_xsel)
       if cb(u) then
          if config.ignore_copied_url and not url.copied[u] then
-            url.copied[u] = true
+            mark_url_as_copied(u)
          end
          return w.WEECHAT_RC_OK
       else
@@ -639,9 +681,9 @@ function run_external(index)
       local u = get_url()
       if u and u ~= "" then
          if config.ignore_copied_url and not url.copied[u] then
-            url.copied[u] = true
+            mark_url_as_copied(u)
          end
-         local command = string.format("%s %q", external_commands[index], u)
+         local command = string.format(external_commands[index], u)
          w.hook_process(command, 0, "run_external_cb", "")
          return w.WEECHAT_RC_OK
       end
