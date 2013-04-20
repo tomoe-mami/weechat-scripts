@@ -220,7 +220,7 @@ function load_config()
    end
 
    if w.config_is_set_plugin("ext_cmd_1") ~= 1 then
-      w.config_set_plugin("ext_cmd_1", "xdg-open %q")
+      w.config_set_plugin("ext_cmd_1", "xdg-open")
       w.config_set_desc_plugin(
          "ext_cmd_1",
          "External command that will be executed when " ..
@@ -683,7 +683,7 @@ function run_external(index)
          if config.ignore_copied_url and not url.copied[u] then
             mark_url_as_copied(u)
          end
-         local command = string.format(external_commands[index], u)
+         local command = string.format("%s %q", external_commands[index], u)
          w.hook_process(command, 0, "run_external_cb", "")
          return w.WEECHAT_RC_OK
       end
