@@ -39,7 +39,11 @@ local key_bindings = {
 
 
 function message(text)
-   w.print("", SCRIPT_NAME .. "\t" .. text)
+   w.print_date_tags(
+      "",
+      0,
+      "notify_none,no_highlight,no_log",
+      SCRIPT_NAME .. "\t" .. text)
 end
 
 function setup()
