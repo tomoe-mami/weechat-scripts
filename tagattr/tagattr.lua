@@ -1,7 +1,7 @@
 attributes = {}
 strip_colors = false
 
-function init()
+function setup()
    weechat.register(
       "tagattr", "rumia <https://github.com/rumia>", "0.1", "WTFPL",
       "Apply attributes to message based on its tags",
@@ -55,4 +55,4 @@ function print_cb(data, modifier, modifier_data, text)
    return result
 end
 
-init()
+setup()

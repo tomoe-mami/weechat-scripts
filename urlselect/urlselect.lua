@@ -39,7 +39,7 @@ local key_bindings = {
 
 
 function message(text)
-   w.print_date_tags(
+   weechat.print_date_tags(
       "",
       0,
       "notify_none,no_highlight,no_log",
@@ -61,15 +61,15 @@ function setup()
    if #mode.order < 1 then
       error("You need xclip and/or tmux to use this script.")
    else
-      w.register(
+      weechat.register(
          SCRIPT_NAME, "rumia <https://github.com/rumia>", "0.1", "WTFPL",
-         "Selects URL in a buffer and copy it into clipboard/tmux paste buffer " ..
-         "or execute external command on it",
+         "Selects URL in a buffer and copy it into clipboard/tmux paste " ..
+         "buffer or execute external command on it",
          "unload", "")
 
       local total_external_commands = load_config()
-      w.bar_item_new(SCRIPT_NAME, "bar_item_cb", "")
-      w.hook_command(
+      weechat.bar_item_new(SCRIPT_NAME, "bar_item_cb", "")
+      weechat.hook_command(
          SCRIPT_NAME,
          "Select URL in a buffer and copy it into X clipboard or Tmux buffer",
 
@@ -92,29 +92,32 @@ function setup()
          "")
 
       if config.exp_time > 0 then
-         w.hook_timer(config.exp_time * 1000, 60, 0, "cleanup_copied_urls", "")
+         weechat.hook_timer(
+            config.exp_time * 1000,
+            60, 0,
+            "cleanup_copied_urls", "")
       end
 
       if config.noisy then
          local msg = string.format(
             "%sSetup complete. Ignore copied URL: %s%s%s. Noisy: %syes%s. " ..
             "%s%d%s external commands. Available modes:",
-            w.color(config.default_color),
-            w.color(config.key_color),
+            weechat.color(config.default_color),
+            weechat.color(config.key_color),
             (config.ignore_copied_url and "yes" or "no"),
-            w.color(config.default_color),
-            w.color(config.key_color),
-            w.color(config.default_color),
-            w.color(config.key_color),
+            weechat.color(config.default_color),
+            weechat.color(config.key_color),
+            weechat.color(config.default_color),
+            weechat.color(config.key_color),
             total_external_commands,
-            w.color(config.default_color))
+            weechat.color(config.default_color))
 
          for index, name in ipairs(mode.order) do
             local entry = string.format("%d. %s", index, name)
             if name == mode.current then
-               entry = w.color(config.key_color) ..
+               entry = weechat.color(config.key_color) ..
                        entry ..
-                       w.color(config.default_color)
+                       weechat.color(config.default_color)
             end
             msg = msg .. " " .. entry
          end
@@ -178,28 +181,28 @@ function load_config()
 
    for name, info in pairs(options) do
       local opt_type = type(info.default)
-      local value = w.config_get_plugin(name)
+      local value = weechat.config_get_plugin(name)
       if opt_type == "boolean" then
          if value ~= "yes" and value ~= "no" then
             config[name] = info.default
-            w.config_set_plugin(name, info.default and "yes" or "no")
-            w.config_set_desc_plugin(name, info.description)
+            weechat.config_set_plugin(name, info.default and "yes" or "no")
+            weechat.config_set_desc_plugin(name, info.description)
          else
             config[name] = (value == "yes")
          end
       elseif opt_type == "number" then
          if not value or value == "" then
             config[name] = info.default
-            w.config_set_plugin(name, info.default)
-            w.config_set_desc_plugin(name, info.description)
+            weechat.config_set_plugin(name, info.default)
+            weechat.config_set_desc_plugin(name, info.description)
          else
             config[name] = tonumber(value)
          end
       else
          if not value or value == "" then
             config[name] = info.default
-            w.config_set_plugin(name, info.default)
-            w.config_set_desc_plugin(name, info.description)
+            weechat.config_set_plugin(name, info.default)
+            weechat.config_set_desc_plugin(name, info.description)
          else
             config[name] = value
          end
@@ -211,10 +214,10 @@ function load_config()
       valid_modes.secondary = #mode.order
    end
 
-   local value = w.config_get_plugin("mode")
+   local value = weechat.config_get_plugin("mode")
    if not value or value == "" or not mode.valid[value] then
-      w.config_set_plugin("mode", mode.order[1])
-      w.config_set_desc_plugin(
+      weechat.config_set_plugin("mode", mode.order[1])
+      weechat.config_set_desc_plugin(
          "mode",
          "Default mode to use. Valid values are: primary, clipboard, " ..
          "tmux, secondary")
@@ -223,9 +226,9 @@ function load_config()
       mode.current = value
    end
 
-   if w.config_is_set_plugin("ext_cmd_1") ~= 1 then
-      w.config_set_plugin("ext_cmd_1", "xdg-open")
-      w.config_set_desc_plugin(
+   if weechat.config_is_set_plugin("ext_cmd_1") ~= 1 then
+      weechat.config_set_plugin("ext_cmd_1", "xdg-open")
+      weechat.config_set_desc_plugin(
          "ext_cmd_1",
          "External command that will be executed when " ..
          "key 1 pressed during URL selection")
@@ -233,7 +236,7 @@ function load_config()
 
    local cmd_count = 0
    for index = 0, 9 do
-      local opt_value = w.config_get_plugin("ext_cmd_" .. index)
+      local opt_value = weechat.config_get_plugin("ext_cmd_" .. index)
       if opt_value and opt_value ~= "" then
          external_commands[index] = opt_value
          key_bindings[index] = "exec " .. index
@@ -245,14 +248,14 @@ function load_config()
 end
 
 function unload()
-   w.config_set_plugin("mode", mode.current)
-   w.config_set_plugin("show_keys", config.show_keys and "yes" or "no")
+   weechat.config_set_plugin("mode", mode.current)
+   weechat.config_set_plugin("show_keys", config.show_keys and "yes" or "no")
 
    if active_buffer then
       setup_key_bindings(false)
    end
 
-   w.unhook_all()
+   weechat.unhook_all()
 end
 
 function main_command_cb(data, buffer, arg)
@@ -293,29 +296,33 @@ function main_command_cb(data, buffer, arg)
          finish_url_selection()
       end
    end
-   return w.WEECHAT_RC_OK
+   return weechat.WEECHAT_RC_OK
 end
 
 function buffer_switch_cb(data, signal, buffer)
    if buffer ~= active_buffer then
       finish_url_selection()
    end
-   return w.WEECHAT_RC_OK
+   return weechat.WEECHAT_RC_OK
 end
 
 function start_url_selection(show_all)
    collect_urls(show_all)
    if url.index > 0 then
-      orig_bar_items = w.config_string(w.config_get("weechat.bar.input.items"))
-      input_bar = w.bar_search("input")
+      local cfg = weechat.config_get("weechat.bar.input.items")
+      orig_bar_items = weechat.config_string(cfg)
+      input_bar = weechat.bar_search("input")
 
       if input_bar and input_bar ~= "" then
          -- if i didn't include input_text, the cursor position will stay in
          -- current position.
-         w.bar_set(input_bar, "items", "urlselect,input_text")
+         weechat.bar_set(input_bar, "items", "urlselect,input_text")
          setup_key_bindings(true)
-         w.bar_item_update(SCRIPT_NAME)
-         buf_switch_hook = w.hook_signal("buffer_switch", "buffer_switch_cb", "")
+         weechat.bar_item_update(SCRIPT_NAME)
+         buf_switch_hook = weechat.hook_signal(
+            "buffer_switch",
+            "buffer_switch_cb",
+            "")
       else
          finish_url_selection()
       end
@@ -326,12 +333,12 @@ function finish_url_selection()
    if active_buffer then
       setup_key_bindings(false)
       url.list, url.index, active_buffer = nil, nil, nil
-      w.bar_item_update(SCRIPT_NAME)
+      weechat.bar_item_update(SCRIPT_NAME)
 
       if input_bar and input_bar ~= "" then
-         w.bar_set(input_bar, "items", orig_bar_items)
+         weechat.bar_set(input_bar, "items", orig_bar_items)
          if buf_switch_hook ~= "" then
-            w.unhook(buf_switch_hook)
+            weechat.unhook(buf_switch_hook)
          end
       end
    end
@@ -340,9 +347,9 @@ end
 function bar_item_cb(data, item, window)
    if url.list and url.index and url.index ~= 0 and url.list[url.index] then
       local text = string.format("%s%s: %s%s",
-         w.color(config.default_color),
+         weechat.color(config.default_color),
          SCRIPT_NAME,
-         w.color(config.mode_color),
+         weechat.color(config.mode_color),
          mode.current)
 
       if config.show_keys then
@@ -350,58 +357,58 @@ function bar_item_cb(data, item, window)
                 string.format(
                   " %s<%s?%s> hide keys <%sup%s> prev <%sdown%s> next " ..
                   "<%stab%s> mode <%sctrl-c%s> cancel <%senter%s> copy",
-                  w.color(config.default_color),
-                  w.color(config.key_color),
-                  w.color(config.default_color),
-                  w.color(config.key_color),
-                  w.color(config.default_color),
-                  w.color(config.key_color),
-                  w.color(config.default_color),
-                  w.color(config.key_color),
-                  w.color(config.default_color),
-                  w.color(config.key_color),
-                  w.color(config.default_color),
-                  w.color(config.key_color),
-                  w.color(config.default_color))
+                  weechat.color(config.default_color),
+                  weechat.color(config.key_color),
+                  weechat.color(config.default_color),
+                  weechat.color(config.key_color),
+                  weechat.color(config.default_color),
+                  weechat.color(config.key_color),
+                  weechat.color(config.default_color),
+                  weechat.color(config.key_color),
+                  weechat.color(config.default_color),
+                  weechat.color(config.key_color),
+                  weechat.color(config.default_color),
+                  weechat.color(config.key_color),
+                  weechat.color(config.default_color))
 
          for index = 0, 9 do
             if external_commands[index] then
                text = text ..
                       string.format(
                         " %s<%s%d%s> %s",
-                        w.color(config.default_color),
-                        w.color(config.key_color),
+                        weechat.color(config.default_color),
+                        weechat.color(config.key_color),
                         index,
-                        w.color(config.default_color),
+                        weechat.color(config.default_color),
                         external_commands[index])
             end
          end
 
       end
       text = text ..
-             w.color(config.default_color) ..
+             weechat.color(config.default_color) ..
              " #" ..
-             w.color(config.index_color) ..
+             weechat.color(config.index_color) ..
              url.index ..
-             w.color(config.default_color) ..
+             weechat.color(config.default_color) ..
              ": "
 
       if config.show_nickname then
          local color = config.nickname_color
          local nick = url.list[url.index][2]
          if color == "" then
-            color = w.info_get("irc_nick_color_name", nick)
+            color = weechat.info_get("irc_nick_color_name", nick)
          end
 
          text = text ..
-                w.color(color) ..
+                weechat.color(color) ..
                 nick ..
-                w.color(config.default_color) ..
+                weechat.color(config.default_color) ..
                 ": "
       end
 
       text = text ..
-             w.color(config.url_color) ..
+             weechat.color(config.url_color) ..
              url.list[url.index][1]
 
       return text
@@ -412,18 +419,18 @@ end
 
 function toggle_key_help()
    config.show_keys = not config.show_keys
-   w.bar_item_update(SCRIPT_NAME)
+   weechat.bar_item_update(SCRIPT_NAME)
 end
 
 function bind_key(param, flag)
    if not param or param == "" then
       list_ext_commands()
-      return w.WEECHAT_RC_OK
+      return weechat.WEECHAT_RC_OK
    else
       local key, command = param:match("^(%d)[ \t]*(.*)")
       if not key then
          message("Please specify a key (0-9)")
-         return w.WEECHAT_RC_ERROR
+         return weechat.WEECHAT_RC_ERROR
       end
 
       key = tonumber(key)
@@ -440,9 +447,9 @@ function list_ext_commands()
    for index = 0, 9 do
       if external_commands[index] then
          message(string.format("%s%d%s: %s",
-            w.color(config.key_color),
+            weechat.color(config.key_color),
             index,
-            w.color(config.default_color),
+            weechat.color(config.default_color),
             external_commands[index]))
       end
    end
@@ -451,12 +458,12 @@ end
 function set_ext_command(key, command)
    if not command or command == "" then
       message("You must specify a command")
-      return w.WEECHAT_RC_ERROR
+      return weechat.WEECHAT_RC_ERROR
    end
 
    local opt_name = "ext_cmd_" .. key
-   w.config_set_plugin(opt_name, command)
-   w.config_set_desc_plugin(
+   weechat.config_set_plugin(opt_name, command)
+   weechat.config_set_desc_plugin(
       opt_name,
       "External command that will be executed when " ..
       "key " .. key .. " pressed during URL selection")
@@ -468,7 +475,7 @@ function set_ext_command(key, command)
    if config.noisy then
       message(string.format("Key %d bound to `%s`", key, command))
    end
-   return w.WEECHAT_RC_OK
+   return weechat.WEECHAT_RC_OK
 end
 
 function unset_ext_command(key)
@@ -477,17 +484,17 @@ function unset_ext_command(key)
       key_bindings[key] = nil
    end
    local opt_name = "ext_cmd_" .. key
-   if w.config_is_set_plugin(opt_name) == 1 then
+   if weechat.config_is_set_plugin(opt_name) == 1 then
       if key == 1 then
-         w.config_set_plugin(opt_name, "")
+         weechat.config_set_plugin(opt_name, "")
       else
-         w.config_unset_plugin(opt_name)
+         weechat.config_unset_plugin(opt_name)
       end
    end
    if config.noisy then
       message(string.format("Key %d unbound", key, command))
    end
-   return w.WEECHAT_RC_OK
+   return weechat.WEECHAT_RC_OK
 end
 
 function switch_mode(param)
@@ -514,7 +521,7 @@ function switch_mode(param)
          end
       end
    end
-   w.bar_item_update(SCRIPT_NAME)
+   weechat.bar_item_update(SCRIPT_NAME)
 end
 
 function setup_key_bindings(flag)
@@ -526,7 +533,7 @@ function setup_key_bindings(flag)
       else
          command = ""
       end
-      w.buffer_set(active_buffer, prefix .. key, command)
+      weechat.buffer_set(active_buffer, prefix .. key, command)
    end
 end
 
@@ -545,12 +552,12 @@ function select_url(rel_pos)
             url.index = 1
          end
       end
-      w.bar_item_update(SCRIPT_NAME)
+      weechat.bar_item_update(SCRIPT_NAME)
    end
 end
 
 function get_tags_and_nickname(infolist)
-   local tag_string = w.infolist_string(infolist, "tags")
+   local tag_string = weechat.infolist_string(infolist, "tags")
    local tags, nickname = {}, "-"
    if tag_string and tag_string ~= "" then
       tag_string:gsub("([^,]+)", function (s)
@@ -581,7 +588,7 @@ function cleanup_copied_urls()
 end
 
 function collect_urls(show_all)
-   local buf_lines = w.infolist_get("buffer_lines", active_buffer, "")
+   local buf_lines = weechat.infolist_get("buffer_lines", active_buffer, "")
    local exists = {}
 
    url.list = {}
@@ -599,12 +606,12 @@ function collect_urls(show_all)
    end
 
    local process_line = function ()
-      local is_displayed = w.infolist_integer(buf_lines, "displayed")
+      local is_displayed = weechat.infolist_integer(buf_lines, "displayed")
       if is_displayed == 1 then
          local tags, nickname = get_tags_and_nickname(buf_lines)
          if tags.irc_privmsg or tags.irc_notice then
-            local line = w.infolist_string(buf_lines, "message")
-            line = w.string_remove_color(line, "")
+            local line = weechat.infolist_string(buf_lines, "message")
+            line = weechat.string_remove_color(line, "")
             for found, tail in line:gmatch(pattern) do
                -- ugly workaround for wikimedia's "(stuff)" suffix on their URLs
                if tail and tail ~= "" then
@@ -616,13 +623,13 @@ function collect_urls(show_all)
       end
    end
 
-   w.infolist_prev(buf_lines)
+   weechat.infolist_prev(buf_lines)
    process_line()
-   while w.infolist_prev(buf_lines) == 1 do
+   while weechat.infolist_prev(buf_lines) == 1 do
       process_line()
    end
 
-   w.infolist_free(buf_lines)
+   weechat.infolist_free(buf_lines)
    url.index = url.list[1] and 1 or 0
 end
 
@@ -647,13 +654,13 @@ function copy_url(u)
          if config.ignore_copied_url and not url.copied[u] then
             mark_url_as_copied(u)
          end
-         return w.WEECHAT_RC_OK
+         return weechat.WEECHAT_RC_OK
       else
-         return w.WEECHAT_RC_ERROR
+         return weechat.WEECHAT_RC_ERROR
       end
    else
       message("Empty URL")
-      return w.WEECHAT_RC_ERROR
+      return weechat.WEECHAT_RC_ERROR
    end
 end
 
@@ -674,7 +681,7 @@ end
 
 function copy_into_tmux(u)
    local command = string.format("tmux set-buffer %q", u)
-   w.hook_process(
+   weechat.hook_process(
       command, 0, "run_external_cb",
       "Copied into tmux buffer: " .. u)
    return true
@@ -688,16 +695,16 @@ function run_external(index)
             mark_url_as_copied(u)
          end
          local command = string.format("%s %q", external_commands[index], u)
-         w.hook_process(command, 0, "run_external_cb", "")
-         return w.WEECHAT_RC_OK
+         weechat.hook_process(command, 0, "run_external_cb", "")
+         return weechat.WEECHAT_RC_OK
       end
    end
 end
 
 function run_external_cb(data, command, status, output, error)
-   if status == w.WEECHAT_HOOK_PROCESS_ERROR then
+   if status == weechat.WEECHAT_HOOK_PROCESS_ERROR then
       message(string.format("Unable to run `%s`: %s", command, error))
-      return w.WEECHAT_RC_ERROR
+      return weechat.WEECHAT_RC_ERROR
    elseif status == 0 then
       if noisy then
          if data and data ~= "" then
@@ -706,7 +713,7 @@ function run_external_cb(data, command, status, output, error)
             message(string.format("`%s` executed. Output: %s", command, output))
          end
       end
-      return w.WEECHAT_RC_OK
+      return weechat.WEECHAT_RC_OK
    end
 end
 
