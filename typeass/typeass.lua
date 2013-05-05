@@ -138,7 +138,11 @@ function input_handler(data, buffer, command)
          weechat.buffer_set(buffer, "input",  nick_completion_part .. input)
       end
    end
-   return weechat.WEECHAT_RC_OK
+   if type(weechat.WEECHAT_RC_OK) == "function" then
+      return weechat.WEECHAT_RC_OK()
+   else
+      return weechat.WEECHAT_RC_OK
+   end
 end
 
 setup()

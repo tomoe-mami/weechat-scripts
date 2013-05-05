@@ -16,7 +16,6 @@
 --]]
 
 local SCRIPT_NAME = "urlselect"
-local w = weechat
 
 local active_buffer = false
 local url = { list = {}, copied = {}, index = 0 }
@@ -37,6 +36,13 @@ local key_bindings = {
    ["ctrl-C"]   = "cancel"          -- ctrl-c
 }
 
+function w(name)
+   if type(weechat[name]) == "function" then
+      return weechat[name]()
+   else
+      return weechat[name]
+   end
+end
 
 function message(text)
    weechat.print_date_tags(
@@ -296,14 +302,14 @@ function main_command_cb(data, buffer, arg)
          finish_url_selection()
       end
    end
-   return weechat.WEECHAT_RC_OK
+   return w("WEECHAT_RC_OK")
 end
 
 function buffer_switch_cb(data, signal, buffer)
    if buffer ~= active_buffer then
       finish_url_selection()
    end
-   return weechat.WEECHAT_RC_OK
+   return w("WEECHAT_RC_OK")
 end
 
 function start_url_selection(show_all)
@@ -425,12 +431,12 @@ end
 function bind_key(param, flag)
    if not param or param == "" then
       list_ext_commands()
-      return weechat.WEECHAT_RC_OK
+      return w("WEECHAT_RC_OK")
    else
       local key, command = param:match("^(%d)[ \t]*(.*)")
       if not key then
          message("Please specify a key (0-9)")
-         return weechat.WEECHAT_RC_ERROR
+         return w("WEECHAT_RC_ERROR")
       end
 
       key = tonumber(key)
@@ -458,7 +464,7 @@ end
 function set_ext_command(key, command)
    if not command or command == "" then
       message("You must specify a command")
-      return weechat.WEECHAT_RC_ERROR
+      return w("WEECHAT_RC_ERROR")
    end
 
    local opt_name = "ext_cmd_" .. key
@@ -475,7 +481,7 @@ function set_ext_command(key, command)
    if config.noisy then
       message(string.format("Key %d bound to `%s`", key, command))
    end
-   return weechat.WEECHAT_RC_OK
+   return w("WEECHAT_RC_OK")
 end
 
 function unset_ext_command(key)
@@ -494,7 +500,7 @@ function unset_ext_command(key)
    if config.noisy then
       message(string.format("Key %d unbound", key, command))
    end
-   return weechat.WEECHAT_RC_OK
+   return w("WEECHAT_RC_OK")
 end
 
 function switch_mode(param)
@@ -654,13 +660,13 @@ function copy_url(u)
          if config.ignore_copied_url and not url.copied[u] then
             mark_url_as_copied(u)
          end
-         return weechat.WEECHAT_RC_OK
+         return w("WEECHAT_RC_OK")
       else
-         return weechat.WEECHAT_RC_ERROR
+         return w("WEECHAT_RC_ERROR")
       end
    else
       message("Empty URL")
-      return weechat.WEECHAT_RC_ERROR
+      return w("WEECHAT_RC_ERROR")
    end
 end
 
@@ -696,16 +702,16 @@ function run_external(index)
          end
          local command = string.format("%s %q", external_commands[index], u)
          weechat.hook_process(command, 0, "run_external_cb", "")
-         return weechat.WEECHAT_RC_OK
+         return w("WEECHAT_RC_OK")
       end
    end
 end
 
 function run_external_cb(data, command, status, output, error)
-   if status == weechat.WEECHAT_HOOK_PROCESS_ERROR then
+   if status == w("WEECHAT_HOOK_PROCESS_ERROR") then
       message(string.format("Unable to run `%s`: %s", command, error))
-      return weechat.WEECHAT_RC_ERROR
-   elseif status == 0 then
+      return w("WEECHAT_RC_ERROR")
+   elseif status >= 0 then
       if noisy then
          if data and data ~= "" then
             message(string.format(data, output))
@@ -713,7 +719,7 @@ function run_external_cb(data, command, status, output, error)
             message(string.format("`%s` executed. Output: %s", command, output))
          end
       end
-      return weechat.WEECHAT_RC_OK
+      return w("WEECHAT_RC_OK")
    end
 end
 
