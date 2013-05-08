@@ -13,10 +13,6 @@ function setup()
    weechat.hook_config("plugins.var.lua.tagattr.*", "config_cb", "")
 end
 
-function get_last_segment(text)
-   return text:match("([^%.]+)$")
-end
-
 function parse_option(name, value)
    local kind, key = name:match("([^%.]+)%.([^%.]+)$")
    if kind and key then

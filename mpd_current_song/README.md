@@ -4,13 +4,16 @@ A bar item for showing currently playing song on MPD.
 
 Requires: mpc (and mpd of course)
 
-## Password
+## Connection Setting
 
-If read access to MPD is protected by password, you must set `MPD_HOST`
-environment variable to "password@host-of-mpd" before running Weechat.
-Alternately, you can create a shell script that wraps mpc and declare the variable
-there then sets `plugins.var.lua.mpd_current_song.client` to the location of that
-shell script. For example, this is the shell script:
+If MPD server is not located in localhost or read access to it is protected by
+password, you must set `MPD_HOST` environment variable to
+*"password@host-of-mpd"* (or just *"host-of-mpd"* if it's not password
+protected) before running Weechat. Alternately, you can create a shell script
+that wraps mpc and declare the variable there then sets
+`plugins.var.lua.mpd_current_song.client` to the location of that shell script.
+
+For example, this is the shell script:
 
 ```sh
 #!/bin/sh
