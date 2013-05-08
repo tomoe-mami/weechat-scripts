@@ -17,6 +17,7 @@ local utf8_flag = pcre.flags().UTF8
 local buffer_mask = "*,!*.nickserv,!*.chanserv"
 local placeholders = {}
 local nick_completion_char = ":"
+local diacritic_marks = { s = 0x0336, u = 0x0332 }
 
 function u(...)
    local result = ""
@@ -27,6 +28,14 @@ function u(...)
       result = result .. c
    end
    return result
+end
+
+function combine(kind, text)
+   kind = string.lower(kind)
+   if not diacritic_marks[kind] then
+      return text
+   end
+   return pcre.gsub(text, "(.)" , u("%1", diacritic_marks[kind]), nil, utf8_flag)
 end
 
 local replacements = {
@@ -47,13 +56,14 @@ local replacements = {
    { "(?i:\\(r\\))",           u(0x00ae) },
    { "(?i:\\(c\\))",           u(0x00a9) },
    { "(?i:\\(tm\\))",          u(0x2122) },
-   { "([\\pL\\pN])$",          "%1." },
    { "^\\s*\\p{Ll}",           unicode.utf8.upper },
    { "[.?!]\\s+\\p{Ll}",       unicode.utf8.upper },
    { "\\bi\\b",                unicode.utf8.upper },
    { "(\\d+)deg\\b",           u("%1", 0x00b0) },
    { "\\s{2,}",                " " },
-   { "\\\\u([[:xdigit:]]{4})", function (s) return u(tonumber(s, 16)) end }
+   { "\\\\u([[:xdigit:]]{4})", function (s) return u(tonumber(s, 16)) end },
+   { "<([uUsS])>(.+?)</\\1>",    combine },
+   { "([\\pL\\pN])$",          "%1." }
 }
 
 function setup()
