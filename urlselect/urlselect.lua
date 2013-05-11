@@ -12,7 +12,7 @@
    Author: rumia <https://github.com/rumia>
    URL: https://github.com/rumia/weechat-scripts
    License: WTFPL
-   Requires: weechat >= 0.3.5, xclip or tmux
+   Requires: weechat >= 0.3.5
 --]]
 
 local SCRIPT_NAME = "urlselect"
@@ -27,10 +27,6 @@ local key_bindings = {
    ["meta2-B"]  = "next",           -- down
    ["meta2-1~"] = "first",          -- home
    ["meta2-4~"] = "last",           -- end
-   ["ctrl-I"]   = "switch next",    -- tab
-   ["meta2-C"]  = "switch next",    -- right
-   ["meta2-Z"]  = "switch prev",    -- shift-tab
-   ["meta2-D"]  = "switch prev",    -- left
    ["?"]        = "keys",           -- ?
    ["ctrl-M"]   = "copy",           -- enter
    ["ctrl-C"]   = "cancel"          -- ctrl-c
@@ -64,71 +60,74 @@ function setup()
       mode.valid.tmux = #mode.order
    end
 
-   if #mode.order < 1 then
-      error("You need xclip and/or tmux to use this script.")
-   else
-      weechat.register(
-         SCRIPT_NAME, "rumia <https://github.com/rumia>", "0.1", "WTFPL",
-         "Selects URL in a buffer and copy it into clipboard/tmux paste " ..
-         "buffer or execute external command on it",
-         "unload", "")
+   weechat.register(
+      SCRIPT_NAME, "rumia <https://github.com/rumia>", "0.1", "WTFPL",
+      "Selects URL in a buffer and copy it into clipboard/tmux paste " ..
+      "buffer or execute external command on it",
+      "unload", "")
 
-      local total_external_commands = load_config()
-      weechat.bar_item_new(SCRIPT_NAME, "bar_item_cb", "")
-      weechat.hook_command(
-         SCRIPT_NAME,
-         "Select URL in a buffer and copy it into X clipboard or Tmux buffer",
+   local total_external_commands = load_config()
+   weechat.bar_item_new(SCRIPT_NAME, "bar_item_cb", "")
+   weechat.hook_command(
+      SCRIPT_NAME,
+      "Select URL in a buffer and copy it into X clipboard or Tmux buffer",
 
-         "[all|bind|unbind]",
+      "[all|bind|unbind]",
 
-         "all        : Include all URLs in selection\n" ..
-         "bind       : Bind an external command to a key (0-9)\n" ..
-         "unbind     : Unbind a key\n\n" ..
-         "KEYS\n\n" ..
-         "Up/Down    : Select previous/next URL\n" ..
-         "Tab        : Switch selection mode\n" ..
-         "?          : Show keyboard shortcuts information\n" ..
-         "Enter      : Copy currently selected URL\n" ..
-         "0-9        : Call external command\n" ..
-         "Ctrl-C     : Cancel URL selection\n\n",
+      "all        : Include all URLs in selection\n" ..
+      "bind       : Bind an external command to a key (0-9)\n" ..
+      "unbind     : Unbind a key\n\n" ..
+      "KEYS\n\n" ..
+      "Up/Down    : Select previous/next URL\n" ..
+      "Tab        : Switch selection mode\n" ..
+      "?          : Show keyboard shortcuts information\n" ..
+      "Enter      : Copy currently selected URL\n" ..
+      "0-9        : Call external command\n" ..
+      "Ctrl-C     : Cancel URL selection\n\n",
 
-         "all || bind || unbind",
+      "all || bind || unbind",
 
-         "main_command_cb",
-         "")
+      "main_command_cb",
+      "")
 
-      if config.exp_time > 0 then
-         weechat.hook_timer(
-            config.exp_time * 1000,
-            60, 0,
-            "cleanup_copied_urls", "")
-      end
+   if mode.current ~= "" then
+      key_bindings["ctrl-I"]  = "switch next" -- tab
+      key_bindings["meta2-C"] = "switch next" -- right
+      key_bindings["meta2-Z"] = "switch prev" -- shift-tab
+      key_bindings["meta2-D"] = "switch prev" -- left
+   end
 
-      if config.noisy then
-         local msg = string.format(
-            "%sSetup complete. Ignore copied URL: %s%s%s. Noisy: %syes%s. " ..
-            "%s%d%s external commands. Available modes:",
-            weechat.color(config.default_color),
-            weechat.color(config.key_color),
-            (config.ignore_copied_url and "yes" or "no"),
-            weechat.color(config.default_color),
-            weechat.color(config.key_color),
-            weechat.color(config.default_color),
-            weechat.color(config.key_color),
-            total_external_commands,
-            weechat.color(config.default_color))
+   if config.exp_time > 0 then
+      weechat.hook_timer(
+         config.exp_time * 1000,
+         60, 0,
+         "cleanup_copied_urls", "")
+   end
 
-         for index, name in ipairs(mode.order) do
-            local entry = string.format("%d. %s", index, name)
-            if name == mode.current then
-               entry = weechat.color(config.key_color) ..
-                       entry ..
-                       weechat.color(config.default_color)
-            end
-            msg = msg .. " " .. entry
+   if config.noisy then
+      local msg = string.format(
+         "%sSetup complete. Ignore copied URL: %s%s%s. Noisy: %syes%s. " ..
+         "%s%d%s external commands. Available modes:",
+         weechat.color(config.default_color),
+         weechat.color(config.key_color),
+         (config.ignore_copied_url and "yes" or "no"),
+         weechat.color(config.default_color),
+         weechat.color(config.key_color),
+         weechat.color(config.default_color),
+         weechat.color(config.key_color),
+         total_external_commands,
+         weechat.color(config.default_color))
+
+      for index, name in ipairs(mode.order) do
+         local entry = string.format("%d. %s", index, name)
+         if name == mode.current then
+            entry = weechat.color(config.key_color) ..
+                    entry ..
+                    weechat.color(config.default_color)
          end
-         message(msg)
+         msg = msg .. " " .. entry
       end
+      message(msg)
    end
 end
 
@@ -227,7 +226,7 @@ function load_config()
          "mode",
          "Default mode to use. Valid values are: primary, clipboard, " ..
          "tmux, secondary")
-      mode.current = mode.order[1]
+      mode.current = mode.order[1] or ""
    else
       mode.current = value
    end
@@ -352,11 +351,11 @@ end
 
 function bar_item_cb(data, item, window)
    if url.list and url.index and url.index ~= 0 and url.list[url.index] then
-      local text = string.format("%s%s: %s%s",
-         weechat.color(config.default_color),
-         SCRIPT_NAME,
-         weechat.color(config.mode_color),
-         mode.current)
+
+      local text = weechat.color(config.default_color) .. SCRIPT_NAME .. ":";
+      if mode.current ~= "" then
+         text = text .. " " ..  weechat.color(config.mode_color) ..  mode.current
+      end
 
       if config.show_keys then
          text = text ..
@@ -504,6 +503,10 @@ function unset_ext_command(key)
 end
 
 function switch_mode(param)
+   if mode.current == "" then
+      return
+   end
+
    if not param then param = "next" end
 
    if mode.valid[param] then

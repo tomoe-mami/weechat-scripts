@@ -18,11 +18,7 @@ example, to use Alt-Enter you run the following command in your Weechat:
 
     /key bind meta-ctrl-M /urlselect
 
-This script requires [xclip][] or [tmux][].
-
-[xclip]: http://sourceforge.net/projects/xclip/
 [screenshot]: http://i.imgur.com/GkhibXW.png
-[tmux]: http://tmux.sourceforge.net/
 
 Options
 -------
