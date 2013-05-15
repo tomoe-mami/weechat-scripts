@@ -32,6 +32,58 @@ local key_bindings = {
    ["ctrl-C"]   = "cancel"          -- ctrl-c
 }
 
+local option_list = {
+   ignore_copied_url = {
+      default = true,
+      description = "Ignore copied URL the next time /urlselect called"
+   },
+   noisy = {
+      default = false,
+      description = "Prints unnecessary information"
+   },
+   show_keys = {
+      default = true,
+      description = "Show keyboard shortcuts info when selecting URL"
+   },
+   show_nickname = {
+      default = false,
+      description = "Show nickname on selected URL"
+   },
+   enable_secondary_mode = {
+      default = false,
+      description = "Enable X selection's secondary mode"
+   },
+   default_color = {
+      default = "gray",
+      description = "Default text color"
+   },
+   key_color = {
+      default = "yellow",
+      description = "Color for shortcut keys"
+   },
+   index_color = {
+      default = "yellow",
+      description = "Color for URL index"
+   },
+   url_color = {
+      default = "lightblue",
+      description = "Color for selected URL"
+   },
+   mode_color = {
+      default = "yellow",
+      description = "Color for current mode"
+   },
+   nickname_color = {
+      default = "",
+      description = "Color for nickname (set to empty string to use " ..
+                    "Weechat nick color)"
+   },
+   exp_time = {
+      default = 2 * 60 * 60,
+      description = "How long (in seconds) a URL should be kept in copied URL list"
+   }
+}
+
 function w(name)
    if type(weechat[name]) == "function" then
       return weechat[name]()
@@ -68,6 +120,7 @@ function setup()
 
    local total_external_commands = load_config()
    weechat.bar_item_new(SCRIPT_NAME, "bar_item_cb", "")
+   weechat.hook_config("plugins.var.lua." .. SCRIPT_NAME .. ".*", "config_cb", "")
    weechat.hook_command(
       SCRIPT_NAME,
       "Select URL in a buffer and copy it into X clipboard or Tmux buffer",
@@ -132,59 +185,7 @@ function setup()
 end
 
 function load_config()
-   local options = {
-      ignore_copied_url = {
-         default = true,
-         description = "Ignore copied URL the next time /urlselect called"
-      },
-      noisy = {
-         default = false,
-         description = "Prints unnecessary information"
-      },
-      show_keys = {
-         default = true,
-         description = "Show keyboard shortcuts info when selecting URL"
-      },
-      show_nickname = {
-         default = false,
-         description = "Show nickname on selected URL"
-      },
-      enable_secondary_mode = {
-         default = false,
-         description = "Enable X selection's secondary mode"
-      },
-      default_color = {
-         default = "gray",
-         description = "Default text color"
-      },
-      key_color = {
-         default = "yellow",
-         description = "Color for shortcut keys"
-      },
-      index_color = {
-         default = "yellow",
-         description = "Color for URL index"
-      },
-      url_color = {
-         default = "lightblue",
-         description = "Color for selected URL"
-      },
-      mode_color = {
-         default = "yellow",
-         description = "Color for current mode"
-      },
-      nickname_color = {
-         default = "",
-         description = "Color for nickname (set to empty string to use " ..
-                       "Weechat nick color)"
-      },
-      exp_time = {
-         default = 2 * 60 * 60,
-         description = "How long (in seconds) a URL should be kept in copied URL list"
-      }
-   }
-
-   for name, info in pairs(options) do
+   for name, info in pairs(option_list) do
       local opt_type = type(info.default)
       local value = weechat.config_get_plugin(name)
       if opt_type == "boolean" then
@@ -250,6 +251,21 @@ function load_config()
    end
 
    return cmd_count
+end
+
+function config_cb(_, option_full_name, option_value)
+   local name = option_full_name:match("([^%.]+)$")
+   if option_list[name] then
+      local option_type = type(option_list[name].default)
+      if option_type == "boolean" then
+         config[name] = option_value == "yes"
+      elseif option_type == "number" then
+         config[name] = tonumber(option_value)
+      else
+         config[name] = option_value
+      end
+   end
+   return w("WEECHAT_RC_OK")
 end
 
 function unload()
@@ -626,6 +642,7 @@ function collect_urls(show_all)
                if tail and tail ~= "" then
                   found = found .. (tail:match("^(%b())") or "")
                end
+               found = found:gsub("[,%.]+$", "")
                store_url(found, nickname)
             end
          end
