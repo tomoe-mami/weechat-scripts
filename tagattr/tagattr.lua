@@ -103,7 +103,7 @@ function print_cb(_, modifier, modifier_data, text)
       right = weechat.string_remove_color(right, "")
    end
    if is_action then
-      local nick, actual_message = right:match("^([^%s]+%s+)(.+)$")
+      local nick, actual_message = right:match("^([^%s]+%s+)(.*)$")
       return left .. msg_prefixes .. nick .. msg_color ..
              actual_message .. msg_suffixes
    else
