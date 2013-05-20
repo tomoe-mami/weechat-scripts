@@ -97,6 +97,12 @@ function print_cb(_, modifier, modifier_data, text)
          end
 
       end
+      if #msg_prefixes > 0 then
+         msg_prefixes = msg_prefixes .. weechat.color("reset")
+      end
+      if #msg_suffixes > 0 then
+         msg_suffixes = msg_suffixes .. weechat.color("reset")
+      end
    end
 
    if strip_colors then
