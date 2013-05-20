@@ -20,6 +20,9 @@ A couple notes before you install this script:
   useless spaces just to make the marker aligned correctly. And that means your
   log file will contain more junks!
 
+- Highlight color and offline nick color will override the whole prefix
+  including the marker sets by this script.
+
 - The god damn marker doesn't go away when you zoom in one of the merged
   buffers.
 
