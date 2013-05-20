@@ -70,7 +70,7 @@ function load_config()
       weechat.config_set_plugin("string", marker)
       weechat.config_set_desc_plugin("string", "Marker string")
    else
-      marker = weechat.config_get_plugin("marker")
+      marker = weechat.config_get_plugin("string")
    end
 
    if weechat.config_is_set_plugin("colors") ~= 1 then
