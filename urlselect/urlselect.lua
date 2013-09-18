@@ -114,15 +114,8 @@ local g = {
    }
 }
 
-function w(name)
-   if type(weechat[name]) == "function" then
-      return weechat[name]()
-   else
-      return weechat[name]
-   end
-end
-
 function message(text)
+   if not text then text = "(nil)" end
    weechat.print_date_tags(
       "",
       0,
@@ -151,6 +144,7 @@ function setup()
       "unload",
       "")
 
+   fix_constants()
    load_config()
    setup_hooks()
    weechat.bar_item_new(g.script.name, "bar_item_cb", "")
@@ -168,6 +162,24 @@ function setup()
 
    if g.config.noisy then
       show_init_message()
+   end
+end
+
+-- for weechat < 0.4.0, weechat.WEECHAT_* constants are actually function
+function fix_constants()
+   local names = {
+      "WEECHAT_RC_OK",
+      "WEECHAT_RC_ERROR",
+      "WEECHAT_HOOK_PROCESS_ERROR",
+      "WEECHAT_HOOK_PROCESS_RUNNING"
+   }
+
+   for _, name in ipairs(names) do
+      if type(weechat[name]) == "function" then
+         g[name] = weechat[name]()
+      else
+         g[name] = weechat[name]
+      end
    end
 end
 
@@ -372,7 +384,7 @@ function config_cb(_, option_full_name, option_value)
          g.config[name] = option_value
       end
    end
-   return w("WEECHAT_RC_OK")
+   return g.WEECHAT_RC_OK
 end
 
 function unload()
@@ -387,7 +399,7 @@ function unload()
 end
 
 function main_command_cb(data, buffer, arg)
-   local op, param = arg:match("^([^ \t]+)[ \t]*(.*)$")
+   local op, param = arg:match("^([^ \t]*)[ \t]*(.*)$")
 
    if not g.active_buffer then
       if op == "bind" then
@@ -429,14 +441,14 @@ function main_command_cb(data, buffer, arg)
          finish_url_selection()
       end
    end
-   return w("WEECHAT_RC_OK")
+   return g.WEECHAT_RC_OK
 end
 
 function buffer_switch_cb(data, signal, buffer)
    if buffer ~= g.active_buffer then
       finish_url_selection()
    end
-   return w("WEECHAT_RC_OK")
+   return g.WEECHAT_RC_OK
 end
 
 function start_url_selection(show_all)
@@ -570,12 +582,12 @@ end
 function bind_key(param, flag)
    if not param or param == "" then
       list_ext_commands()
-      return w("WEECHAT_RC_OK")
+      return g.WEECHAT_RC_OK
    else
       local key, command = param:match("^(%d)[ \t]*(.*)")
       if not key then
          message("Please specify a key (0-9)")
-         return w("WEECHAT_RC_ERROR")
+         return g.WEECHAT_RC_ERROR
       end
 
       key = tonumber(key)
@@ -606,7 +618,7 @@ end
 function set_ext_command(key, command)
    if not command or command == "" then
       message("You must specify a command")
-      return w("WEECHAT_RC_ERROR")
+      return g.WEECHAT_RC_ERROR
    end
 
    local opt_name = "ext_cmd_" .. key
@@ -623,7 +635,7 @@ function set_ext_command(key, command)
    if g.config.noisy then
       message(string.format("Key %d bound to `%s`", key, command))
    end
-   return w("WEECHAT_RC_OK")
+   return g.WEECHAT_RC_OK
 end
 
 function unset_ext_command(key)
@@ -641,7 +653,7 @@ function unset_ext_command(key)
    if g.config.noisy then
       message(string.format("Key %d unbound", key, command))
    end
-   return w("WEECHAT_RC_OK")
+   return g.WEECHAT_RC_OK
 end
 
 function switch_mode(param)
@@ -807,13 +819,13 @@ function copy_url(u)
          if g.config.ignore_copied_url and not g.url.copied[u] then
             mark_url_as_copied(u)
          end
-         return w("WEECHAT_RC_OK")
+         return g.WEECHAT_RC_OK
       else
-         return w("WEECHAT_RC_ERROR")
+         return g.WEECHAT_RC_ERROR
       end
    else
       message("Empty URL")
-      return w("WEECHAT_RC_ERROR")
+      return g.WEECHAT_RC_ERROR
    end
 end
 
@@ -849,15 +861,15 @@ function run_external(index)
          end
          local command = string.format("%s %q", g.command.list[index], u)
          weechat.hook_process(command, 0, "run_external_cb", "")
-         return w("WEECHAT_RC_OK")
+         return g.WEECHAT_RC_OK
       end
    end
 end
 
 function run_external_cb(data, command, status, output, error)
-   if status == w("WEECHAT_HOOK_PROCESS_ERROR") then
+   if status == g.WEECHAT_HOOK_PROCESS_ERROR then
       message(string.format("Unable to run `%s`: %s", command, error))
-      return w("WEECHAT_RC_ERROR")
+      return g.WEECHAT_RC_ERROR
    elseif status >= 0 then
       if g.config.noisy then
          if data and data ~= "" then
@@ -866,7 +878,7 @@ function run_external_cb(data, command, status, output, error)
             message(string.format("`%s` executed. Output: %s", command, output))
          end
       end
-      return w("WEECHAT_RC_OK")
+      return g.WEECHAT_RC_OK
    end
 end
 
@@ -990,7 +1002,7 @@ function receive_response_cb(param, request_url, status, response, err)
       if err and err ~= "" then
          message(err)
          cb(i)
-         return w("WEECHAT_RC_ERROR")
+         return g.WEECHAT_RC_ERROR
       else
          if g.url.list[i].buffer then
             response = g.url.list[i].buffer .. response
@@ -998,11 +1010,11 @@ function receive_response_cb(param, request_url, status, response, err)
          end
          return cb(i, response)
       end
-   elseif status == w("WEECHAT_HOOK_PROCESS_ERROR") then
+   elseif status == g.WEECHAT_HOOK_PROCESS_ERROR then
       message(err)
       cb(i)
-      return w("WEECHAT_RC_ERROR")
-   elseif status == w("WEECHAT_HOOK_PROCESS_RUNNING") then
+      return g.WEECHAT_RC_ERROR
+   elseif status == g.WEECHAT_HOOK_PROCESS_RUNNING then
       if not g.url.list[i].buffer then
          g.url.list[i].buffer = response
       else
@@ -1044,7 +1056,7 @@ function display_youtube_info_cb(i, response)
       ok = true
    end
    weechat.bar_item_update(g.script.name)
-   return w(ok and "WEECHAT_RC_OK" or "WEECHAT_RC_ERROR")
+   return (ok and g.WEECHAT_RC_OK or g.WEECHAT_RC_ERROR)
 end
 
 function info_vimeo(i, current_url, parsed_url)
@@ -1082,7 +1094,7 @@ function display_vimeo_info_cb(i, response)
       ok = true
    end
    weechat.bar_item_update(g.script.name)
-   return w(ok and "WEECHAT_RC_OK" or "WEECHAT_RC_ERROR")
+   return (ok and g.WEECHAT_RC_OK or g.WEECHAT_RC_ERROR)
 end
 
 function info_reddit(i, current_url, parsed_url)
@@ -1146,7 +1158,7 @@ function display_reddit_comment_info_cb(i, response)
       ok = true
    end
    weechat.bar_item_update(g.script.name)
-   return w(ok and "WEECHAT_RC_OK" or "WEECHAT_RC_ERROR")
+   return (ok and g.WEECHAT_RC_OK or g.WEECHAT_RC_ERROR)
 end
 
 function display_reddit_submission_info_cb(i, response)
@@ -1179,7 +1191,7 @@ function display_reddit_submission_info_cb(i, response)
       ok = true
    end
    weechat.bar_item_update(g.script.name)
-   return w(ok and "WEECHAT_RC_OK" or "WEECHAT_RC_ERROR")
+   return (ok and g.WEECHAT_RC_OK or WEECHAT_RC_ERROR)
 end
 
 function display_subreddit_info_cb(i, response)
@@ -1206,7 +1218,7 @@ function display_subreddit_info_cb(i, response)
       ok = true
    end
    weechat.bar_item_update(g.script.name)
-   return w(ok and "WEECHAT_RC_OK" or "WEECHAT_RC_ERROR")
+   return (ok and g.WEECHAT_RC_OK or g.WEECHAT_RC_ERROR)
 end
 
 function display_reddit_user_info_cb(i, response)
@@ -1216,7 +1228,7 @@ function display_reddit_user_info_cb(i, response)
       ok = true
    end
    weechat.bar_item_update(g.script.name)
-   return w(ok and "WEECHAT_RC_OK" or "WEECHAT_RC_ERROR")
+   return (ok and g.WEECHAT_RC_OK or g.WEECHAT_RC_ERROR)
 end
 
 function info_generic(i, current_url, parsed_url)
@@ -1225,14 +1237,18 @@ function info_generic(i, current_url, parsed_url)
 end
 
 function display_generic_info_cb(i, response)
-   local _, _, title = response:find("<title>([^<]*)</title>")
-   if title then
-      g.url.list[i].info = format_info({
-         { "Title", title }
-      })
+   if response then
+      local _, _, title = response:find("<title>([^<]*)</title>")
+      if title then
+         g.url.list[i].info = format_info({
+            { "Title", title }
+         })
+      end
+   else
+      g.url.list[i].info = nil
    end
    weechat.bar_item_update(g.script.name)
-   return w("WEECHAT_RC_OK")
+   return g.WEECHAT_RC_OK
 end
 
 function show_url_info()
