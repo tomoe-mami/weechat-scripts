@@ -16,10 +16,8 @@ end
 function parse_option(name, value)
    local kind, key = name:match("([^%.]+)%.([^%.]+)$")
    if kind and key then
-      if kind == "misc" then
-         if kind == "strip_colors" then
-            strip_colors = (value == "1")
-         end
+      if kind == "misc" and key == "strip_colors" then
+         strip_colors = (value == "1")
       elseif kind == "color" then
          colors[key] = value ~= "" and value or nil
       elseif kind == "prefix" or kind == "suffix" then
