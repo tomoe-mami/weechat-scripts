@@ -11,69 +11,83 @@ g = {
       short_name = {
          value = true,
          type = "boolean",
-         related = "weechat.look.hotlist_short_names"
+         related = "weechat.look.hotlist_short_names",
+         description = "Set to 1 to use short buffer name and 0 for normal name"
       },
       separator = {
          value = ", ",
          type = "string",
-         related = "weechat.look.hotlist_buffer_separator"
+         related = "weechat.look.hotlist_buffer_separator",
+         description = "Separator for list of buffers"
       },
       prefix = {
          value = "C: ",
-         type = "string"
+         type = "string",
+         description = "Text before the list of buffers"
       },
       suffix = {
          value = "",
-         type = "string"
+         type = "string",
+         description = "Text after the list of buffers"
       },
       count_min_msg = {
          value = 2,
          type = "integer",
-         related = "weechat.look.hotlist_count_min_msg"
+         related = "weechat.look.hotlist_count_min_msg",
+         description = "The minimum amount of new messages required to make the message counter appear on each buffer entry"
       },
       color_default = {
          value = "bar_fg",
-         type = "color"
+         type = "color",
+         description = "Default color for bar item"
       },
       color_count_highlight = {
          value = "magenta",
          type = "color",
-         related = "weechat.color.status_count_highlight"
+         related = "weechat.color.status_count_highlight",
+         description = "Color for highlight counter"
       },
       color_count_msg = {
          value = "brown",
          type = "color",
-         related = "weechat.color.status_count_msg"
+         related = "weechat.color.status_count_msg",
+         description = "Color for normal message counter"
       },
       color_count_private = {
          value = "green",
          type = "color",
-         related = "weechat.color.status_count_private"
+         related = "weechat.color.status_count_private",
+         description = "Color for private message counter"
       },
       color_count_other = {
          value = "green",
          type = "color",
-         related = "weechat.color.status_count_other"
+         related = "weechat.color.status_count_other",
+         description = "Color for other message counter"
       },
       color_bufnumber_highlight = {
          value = "lightmagenta",
          type = "color",
-         related = "weechat.color.status_data_highlight"
+         related = "weechat.color.status_data_highlight",
+         description = "Color for buffer number when there's a highlight"
       },
       color_bufnumber_msg = {
          value = "yellow",
          type = "color",
-         related = "weechat.color.status_data_msg"
+         related = "weechat.color.status_data_msg",
+         description = "Color for buffer number when there's normal incoming message"
       },
       color_bufnumber_private = {
          value = "green",
          type = "color",
-         related = "weechat.color.status_data_private"
+         related = "weechat.color.status_data_private",
+         description = "Color for buffer number when there's new private message"
       },
       color_bufnumber_other = {
          value = "default",
          type = "color",
-         related = "weechat.color.status_data_other"
+         related = "weechat.color.status_data_other",
+         description = "Color for buffer number when there's other kind of messages"
       }
    },
    buffers = {
