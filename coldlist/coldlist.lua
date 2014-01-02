@@ -8,61 +8,72 @@ g = {
    },
    config = {},
    defaults = {
-      boolean = {
-         short_name = {
-            value = true,
-            related = "weechat.look.hotlist_short_names",
-            description = ""
-         }
+      short_name = {
+         value = true,
+         type = "boolean",
+         related = "weechat.look.hotlist_short_names"
       },
-      ["string"] = {
-         separator = {
-            value = ", ",
-            related = "weechat.look.hotlist_buffer_separator",
-            description = ""
-         },
-         prefix = {
-            value = "C: ",
-            description = "Text displayed at the beginning of coldlist"
-         },
-         suffix = {
-            value = "",
-            description = "Text displayed at the end of coldlist"
-         }
+      separator = {
+         value = ", ",
+         type = "string",
+         related = "weechat.look.hotlist_buffer_separator"
       },
-      integer = {
-         count_min_msg = {
-            value = 2,
-            related = "weechat.look.hotlist_count_min_msg",
-            description = "Display messages count if number of messages is greater or equal to this value"
-         }
+      prefix = {
+         value = "C: ",
+         type = "string"
       },
-      color = {
-         color_buffer_name = {
-            value = "default",
-            description = ""
-         },
-         color_count_highlight = {
-            value = "magenta",
-            related = "weechat.color.status_count_highlight",
-            description = ""
-         },
-         color_count_msg = {
-            value = "brown",
-            related = "weechat.color.status_count_msg"
-         },
-         color_count_private = {
-            value = "green",
-            related = "weechat.color.status_count_private"
-         },
-         color_count_other = {
-            value = "green",
-            related = "weechat.color.status_count_other"
-         },
-         color_bufnumber_highlight = {
-            value = "lightmagenta",
-            related = "weechat.color.status_data_highlight"
-         }
+      suffix = {
+         value = "",
+         type = "string"
+      },
+      count_min_msg = {
+         value = 2,
+         type = "integer",
+         related = "weechat.look.hotlist_count_min_msg"
+      },
+      color_default = {
+         value = "bar_fg",
+         type = "color"
+      },
+      color_count_highlight = {
+         value = "magenta",
+         type = "color",
+         related = "weechat.color.status_count_highlight"
+      },
+      color_count_msg = {
+         value = "brown",
+         type = "color",
+         related = "weechat.color.status_count_msg"
+      },
+      color_count_private = {
+         value = "green",
+         type = "color",
+         related = "weechat.color.status_count_private"
+      },
+      color_count_other = {
+         value = "green",
+         type = "color",
+         related = "weechat.color.status_count_other"
+      },
+      color_bufnumber_highlight = {
+         value = "lightmagenta",
+         type = "color",
+         related = "weechat.color.status_data_highlight"
+      },
+      color_bufnumber_msg = {
+         value = "yellow",
+         type = "color",
+         related = "weechat.color.status_data_msg"
+      },
+      color_bufnumber_private = {
+         value = "green",
+         type = "color",
+         related = "weechat.color.status_data_private"
+      },
+      color_bufnumber_other = {
+         value = "default",
+         type = "color",
+         related = "weechat.color.status_data_other"
       }
    },
    buffers = {
@@ -80,35 +91,38 @@ g = {
    }
 }
 
-function init_option(name, option_type, weechat_option_name, description)
+function init_option(name, info)
    if weechat.config_is_set_plugin(name) == 0 then
-      local val = g.config[name]
-      if weechat_option_name then
-         local opt = weechat.config_get(weechat_option_name)
-         local func = weechat["config_" .. option_type]
+      local val = info.value
+      if info.related then
+         if not info.type then
+            info.type = "string"
+         end
+         local opt = weechat.config_get(info.related)
+         local f = "config_" .. info.type
 
-         if func and type(func) == "function" then
-            val = func(opt)
+         if weechat[f] and type(weechat[f]) == "function" then
+            val = weechat[f](opt)
          else
-            option_type = "string"
-            val = weechat.config_get_string(opt)
+            info.type = "string"
+            val = weechat.config_string(opt)
          end
 
-         if option_type == "boolean" then
+         if info.type == "boolean" then
             g.config[name] = (val == 1)
          else
             g.config[name] = val
          end
       end
       weechat.config_set_plugin(name, val)
-      if description then
-         weechat.config_set_desc_plugin(name, description)
+      if info.description then
+         weechat.config_set_desc_plugin(name, info.description)
       end
    else
       local val = weechat.config_get_plugin(name)
-      if option_type == "integer" then
+      if info.type == "integer" then
          val = tonumber(val)
-      elseif option_type == "boolean" then
+      elseif info.type == "boolean" then
          val = (val == "1")
       end
       g.config[name] = val
@@ -116,66 +130,109 @@ function init_option(name, option_type, weechat_option_name, description)
 end
 
 function load_config()
-   for option_type, option_list in pairs(g.defaults) do
-      for name, info in pairs(option_list) do
-         init_option(name, option_type, info.related, info.description)
-      end
+   for opt_name, info in pairs(g.defaults) do
+      init_option(opt_name, info)
    end
 end
 
-function print_cb(_, buffer, date, ntags, displayed, highlight, prefix, message)
-   local active = weechat.buffer_get_integer(buffer, "active")
-   local buffer_num = weechat.buffer_get_integer(buffer, "number")
+function print_cb(_, buffer, _, _, displayed, highlighted)
+   if displayed == "1" then
+      local buf_active = weechat.buffer_get_integer(buffer, "active")
+      local buf_num = weechat.buffer_get_integer(buffer, "number")
 
-   local win = weechat.current_window()
-   local win_buffer = weechat.window_get_pointer(win, "buffer")
-   local win_buffer_active = weechat.buffer_get_integer(win_buffer, "active")
-   local win_buffer_num = weechat.buffer_get_integer(win_buffer, "number")
+      local wbuf = weechat.window_get_pointer(weechat.current_window(), "buffer")
+      local wbuf_active = weechat.buffer_get_integer(wbuf, "active")
+      local wbuf_num = weechat.buffer_get_integer(wbuf, "number")
 
-   if active == 0 and win_buffer_num == buffer_num and win_buffer_active == 2 then
-      if not g.buffers.positions[buffer] then
-         local pos = #g.buffers.list + 1
-         g.buffers.list[pos] = {
-             pointer = buffer,
-             count = 1,
-             highlight = highlight
-          }
+      if buf_active == 0 and wbuf_num == buf_num and wbuf_active == 2 then
+         local b = g.buffers
+         if not b.positions[buffer] then
+            local pos = #b.list + 1
+            b.list[pos] = {
+                pointer = buffer,
+                count = 1,
+                highlight = tonumber(highlighted)
+             }
 
-         g.buffers.positions[buffer] = pos
-         if not g.buffers.numbers[buffer_num] then
-            g.buffers.numbers[buffer_num] = {}
+            b.positions[buffer] = pos
+            if not b.numbers[buf_num] then
+               b.numbers[buf_num] = {}
+            end
+            table.insert(b.numbers[buf_num], buffer)
+         else
+            local pos = b.positions[buffer]
+            b.list[pos].count = b.list[pos].count + 1
+            if highlighted == "1" then
+               b.list[pos].highlight = b.list[pos].highlight + 1
+            end
          end
-         table.insert(g.buffers.numbers[buffer_num], buffer)
-      else
-         local pos = g.buffers.positions[buffer]
-         g.buffers.list[pos].count = g.buffers.list[pos].count + 1
-         if highlight then
-            g.buffers.list[pos].highlight = g.buffers.list[pos].highlight + 1
-         end
+         g.buffers = b
+         weechat.bar_item_update(g.script.name)
       end
-      weechat.bar_item_update(g.script.name)
    end
    return weechat.WEECHAT_RC_OK
 end
 
 function bar_item_cb()
-   local list = {}
+   local list, cfg = {}, g.config
    for _, buf in ipairs(g.buffers.list) do
       local name, key
-      if g.config.short_name then
+      if cfg.short_name then
          key = "short_name"
       else
          key = "name"
       end
       name = weechat.buffer_get_string(buf.pointer, key)
       local number = weechat.buffer_get_integer(buf.pointer, "number")
-      local entry = string.format("%d:%s", number, name)
-      if g.config.count_min_msg > 0 and buf.count >= g.config.count_min_msg then
-         entry = entry .. string.format(" (%d)", buf.count)
+      local buf_type = weechat.buffer_get_string(buf.pointer, "localvar_type")
+
+      local num_color, entry
+      if buf.highlight > 0 then
+         num_color = cfg.color_bufnumber_highlight
+      elseif buf_type == "private" then
+         num_color = cfg.color_bufnumber_private
+      else
+         num_color = cfg.color_bufnumber_msg
+      end
+      entry = weechat.color(num_color) ..
+              number ..
+              weechat.color(cfg.color_default) ..
+              ":" ..
+              name
+
+      local counter = {}
+      if cfg.count_min_msg > 0 and buf.count >= cfg.count_min_msg then
+         local count_color
+         if buf_type == "private" then
+            count_color = cfg.color_count_private
+         else
+            count_color = cfg.color_count_msg
+         end
+         table.insert(counter, weechat.color(count_color) .. buf.count)
+      end
+      if buf.highlight > 0 then
+         table.insert(
+            counter,
+            weechat.color(cfg.color_count_highlight) .. buf.highlight)
+      end
+
+      if #counter > 0 then
+         entry = entry ..
+                 "(" ..
+                 table.concat(counter, weechat.color(cfg.color_default) .. ",") ..
+                 weechat.color(cfg.color_default) ..
+                 ")"
       end
       table.insert(list, entry)
    end
-   return table.concat(list, g.config.separator)
+   local result = table.concat(list, cfg.separator)
+   if result ~= "" then
+      return weechat.color(cfg.color_default) ..
+             cfg.prefix ..
+             result
+    else
+      return ""
+    end
 end
 
 function update_positions(start_pos)
@@ -237,11 +294,10 @@ end
 
 function config_cb(_, option_name, option_value)
    local name = option_name:match("([^%.]+)$")
-   if g.config[name] then
-      local option_type = type(g.config[name])
-      if option_type == "number" then
+   if g.defaults[name] then
+      if g.defaults[name].type == "integer" then
          option_value = tonumber(option_value)
-      elseif option_type == "boolean" then
+      elseif g.defaults[name].type == "boolean" then
          option_value = (option_value == "1")
       end
       g.config[name] = option_value
