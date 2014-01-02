@@ -6,31 +6,120 @@ g = {
       license = "WTFPL",
       description = "Like hotlist, but cold"
    },
-   config = {
-      short_name = true,
-      separator = ", ",
-      count_min_msg = 2
+   config = {},
+   defaults = {
+      boolean = {
+         short_name = {
+            value = true,
+            related = "weechat.look.hotlist_short_names",
+            description = ""
+         }
+      },
+      ["string"] = {
+         separator = {
+            value = ", ",
+            related = "weechat.look.hotlist_buffer_separator",
+            description = ""
+         },
+         prefix = {
+            value = "C: ",
+            description = "Text displayed at the beginning of coldlist"
+         },
+         suffix = {
+            value = "",
+            description = "Text displayed at the end of coldlist"
+         }
+      },
+      integer = {
+         count_min_msg = {
+            value = 2,
+            related = "weechat.look.hotlist_count_min_msg",
+            description = "Display messages count if number of messages is greater or equal to this value"
+         }
+      },
+      color = {
+         color_buffer_name = {
+            value = "default",
+            description = ""
+         },
+         color_count_highlight = {
+            value = "magenta",
+            related = "weechat.color.status_count_highlight",
+            description = ""
+         },
+         color_count_msg = {
+            value = "brown",
+            related = "weechat.color.status_count_msg"
+         },
+         color_count_private = {
+            value = "green",
+            related = "weechat.color.status_count_private"
+         },
+         color_count_other = {
+            value = "green",
+            related = "weechat.color.status_count_other"
+         },
+         color_bufnumber_highlight = {
+            value = "lightmagenta",
+            related = "weechat.color.status_data_highlight"
+         }
+      }
    },
    buffers = {
       -- i hate lua table
+
+      -- this is for list of buffers that are in the coldlist
       list = {},
+
+      -- this is map of positions of buffers inside the previous table.
+      -- this is needed because lua does not support ordered hashtable.
       positions = {},
+
+      -- this is for list of buffer numbers that are in the coldlist.
       numbers = {}
    }
 }
 
+function init_option(name, option_type, weechat_option_name, description)
+   if weechat.config_is_set_plugin(name) == 0 then
+      local val = g.config[name]
+      if weechat_option_name then
+         local opt = weechat.config_get(weechat_option_name)
+         local func = weechat["config_" .. option_type]
+
+         if func and type(func) == "function" then
+            val = func(opt)
+         else
+            option_type = "string"
+            val = weechat.config_get_string(opt)
+         end
+
+         if option_type == "boolean" then
+            g.config[name] = (val == 1)
+         else
+            g.config[name] = val
+         end
+      end
+      weechat.config_set_plugin(name, val)
+      if description then
+         weechat.config_set_desc_plugin(name, description)
+      end
+   else
+      local val = weechat.config_get_plugin(name)
+      if option_type == "integer" then
+         val = tonumber(val)
+      elseif option_type == "boolean" then
+         val = (val == "1")
+      end
+      g.config[name] = val
+   end
+end
+
 function load_config()
-   local opt = weechat.config_get("weechat.look.hotlist_short_names")
-   if opt ~= "" then
-      g.config.short_name = (weechat.config_boolean(opt) == 1)
-   end
-   local opt = weechat.config_get("weechat.look.hotlist_buffer_separator")
-   if opt ~= "" then
-      g.config.separator = weechat.config_string(opt)
-   end
-   local opt = weechat.config_get("weechat.look.hotlist_count_min_msg")
-   if opt ~= "" then
-      g.config.count_min_msg = weechat.config_integer(opt)
+   for option_type, option_list in pairs(g.defaults) do
+      for name, info in pairs(option_list) do
+         init_option(name, option_type, info.related, info.description)
+      end
    end
 end
 
@@ -48,7 +137,8 @@ function print_cb(_, buffer, date, ntags, displayed, highlight, prefix, message)
          local pos = #g.buffers.list + 1
          g.buffers.list[pos] = {
              pointer = buffer,
-             count = 1
+             count = 1,
+             highlight = highlight
           }
 
          g.buffers.positions[buffer] = pos
@@ -59,6 +149,9 @@ function print_cb(_, buffer, date, ntags, displayed, highlight, prefix, message)
       else
          local pos = g.buffers.positions[buffer]
          g.buffers.list[pos].count = g.buffers.list[pos].count + 1
+         if highlight then
+            g.buffers.list[pos].highlight = g.buffers.list[pos].highlight + 1
+         end
       end
       weechat.bar_item_update(g.script.name)
    end
@@ -142,14 +235,16 @@ function buffer_switch_cb(_, signal, buffer)
    return weechat.WEECHAT_RC_OK
 end
 
-function config_cb(_, name, value)
-   weechat.print("", name .. ":" .. value .. " (" .. type(value) .. ")")
-   if name == "weechat.look.hotlist_short_names" then
-      g.config.short_name = (value == "on")
-   elseif name == "weechat.look.hotlist_buffer_separator" then
-      g.config.separator = value
-   elseif name == "weechat.look.hotlist_count_min_msg" then
-      g.config.count_min_msg = tonumber(value)
+function config_cb(_, option_name, option_value)
+   local name = option_name:match("([^%.]+)$")
+   if g.config[name] then
+      local option_type = type(g.config[name])
+      if option_type == "number" then
+         option_value = tonumber(option_value)
+      elseif option_type == "boolean" then
+         option_value = (option_value == "1")
+      end
+      g.config[name] = option_value
    end
    return weechat.WEECHAT_RC_OK
 end
@@ -168,7 +263,7 @@ function setup()
    weechat.bar_item_new(g.script.name, "bar_item_cb", "")
    weechat.hook_signal("buffer_unzoomed", "buffer_unzoom_cb", "")
    weechat.hook_signal("buffer_switch", "buffer_switch_cb", "")
-   weechat.hook_config("weechat.look.hotlist*", "config_cb", "")
+   weechat.hook_config("plugins.var.lua." .. g.script.name .. ".*", "config_cb", "")
    weechat.hook_print("", "irc_privmsg", "", 0, "print_cb", "")
 end
 
