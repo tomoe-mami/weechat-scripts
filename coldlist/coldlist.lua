@@ -122,11 +122,11 @@ function init_option(name, info)
             val = weechat.config_string(opt)
          end
 
-         if info.type == "boolean" then
-            g.config[name] = (val == 1)
-         else
-            g.config[name] = val
-         end
+      end
+      if info.type == "boolean" then
+         g.config[name] = (val == 1)
+      else
+         g.config[name] = val
       end
       weechat.config_set_plugin(name, val)
       if info.description then
@@ -243,7 +243,8 @@ function bar_item_cb()
    if result ~= "" then
       return weechat.color(cfg.color_default) ..
              cfg.prefix ..
-             result
+             result ..
+             cfg.suffix
     else
       return ""
     end
@@ -315,6 +316,7 @@ function config_cb(_, option_name, option_value)
          option_value = (option_value == "1")
       end
       g.config[name] = option_value
+      weechat.bar_item_update(g.script.name)
    end
    return weechat.WEECHAT_RC_OK
 end
