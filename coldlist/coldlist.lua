@@ -1,10 +1,32 @@
-g = {
+--[[
+-- coldlist
+--
+-- A script that provides a bar item that works similar to Weechat's hotlist
+-- but only for messages from buffers hidden behind currently zoomed buffer.
+--
+-- See g.defaults for list of options.
+--
+-- This script only has 1 command for now: `/coldlist clear` for clearing all
+-- buffers in coldlist.
+--
+--
+-- Author: tomoe-mami <rumia.youkai.of.dusk@gmail.com>
+-- License: WTFPL
+-- Requires: Weechat 0.4.3+
+-- URL: https://github.com/tomoe-mami/weechat-scripts
+--
+--]]
+
+local w = weechat
+local g = {
    script = {
       name = "coldlist",
-      author = "rumia <https://github.com/rumia>",
+      author = "tomoe-mami <https://github.com/tomoe-mami>",
       version = "0.1",
       license = "WTFPL",
-      description = "Like hotlist, but cold"
+      description =
+         "A bar item that works similar to Weechat's hotlist but only for " ..
+         "messages from buffers hidden behind active zoomed buffer."
    },
    config = {},
    defaults = {
@@ -34,7 +56,9 @@ g = {
          value = 2,
          type = "integer",
          related = "weechat.look.hotlist_count_min_msg",
-         description = "The minimum amount of new messages required to make the message counter appear on each buffer entry"
+         description =
+            "The minimum amount of new messages required to make the message " ..
+            "counter appear on each buffer entry"
       },
       color_default = {
          value = "bar_fg",
@@ -59,12 +83,6 @@ g = {
          related = "weechat.color.status_count_private",
          description = "Color for private message counter"
       },
-      color_count_other = {
-         value = "green",
-         type = "color",
-         related = "weechat.color.status_count_other",
-         description = "Color for other message counter"
-      },
       color_bufnumber_highlight = {
          value = "lightmagenta",
          type = "color",
@@ -75,19 +93,14 @@ g = {
          value = "yellow",
          type = "color",
          related = "weechat.color.status_data_msg",
-         description = "Color for buffer number when there's normal incoming message"
+         description = 
+            "Color for buffer number when there's normal incoming message"
       },
       color_bufnumber_private = {
          value = "green",
          type = "color",
          related = "weechat.color.status_data_private",
          description = "Color for buffer number when there's new private message"
-      },
-      color_bufnumber_other = {
-         value = "default",
-         type = "color",
-         related = "weechat.color.status_data_other",
-         description = "Color for buffer number when there's other kind of messages"
       }
    },
    buffers = {
@@ -106,34 +119,34 @@ g = {
 }
 
 function init_option(name, info)
-   if weechat.config_is_set_plugin(name) == 0 then
+   if w.config_is_set_plugin(name) == 0 then
       local val = info.value
       if info.related then
          if not info.type then
             info.type = "string"
          end
-         local opt = weechat.config_get(info.related)
-         local f = "config_" .. info.type
-
-         if weechat[f] and type(weechat[f]) == "function" then
-            val = weechat[f](opt)
-         else
-            info.type = "string"
-            val = weechat.config_string(opt)
+         local opt = w.config_get(info.related)
+         if opt ~= "" then
+            local f = w["config_" .. info.type]
+            if f and type(f) == "function" then
+               val = f(opt)
+            else
+               info.type = "string"
+               val = w.config_string(opt)
+            end
          end
-
       end
       if info.type == "boolean" then
          g.config[name] = (val == 1)
       else
          g.config[name] = val
       end
-      weechat.config_set_plugin(name, val)
+      w.config_set_plugin(name, val)
       if info.description then
-         weechat.config_set_desc_plugin(name, info.description)
+         w.config_set_desc_plugin(name, info.description)
       end
    else
-      local val = weechat.config_get_plugin(name)
+      local val = w.config_get_plugin(name)
       if info.type == "integer" then
          val = tonumber(val)
       elseif info.type == "boolean" then
@@ -151,12 +164,12 @@ end
 
 function print_cb(_, buffer, _, _, displayed, highlighted)
    if displayed == "1" then
-      local buf_active = weechat.buffer_get_integer(buffer, "active")
-      local buf_num = weechat.buffer_get_integer(buffer, "number")
+      local buf_active = w.buffer_get_integer(buffer, "active")
+      local buf_num = w.buffer_get_integer(buffer, "number")
 
-      local wbuf = weechat.window_get_pointer(weechat.current_window(), "buffer")
-      local wbuf_active = weechat.buffer_get_integer(wbuf, "active")
-      local wbuf_num = weechat.buffer_get_integer(wbuf, "number")
+      local wbuf = w.window_get_pointer(w.current_window(), "buffer")
+      local wbuf_active = w.buffer_get_integer(wbuf, "active")
+      local wbuf_num = w.buffer_get_integer(wbuf, "number")
 
       if buf_active == 0 and wbuf_num == buf_num and wbuf_active == 2 then
          local b = g.buffers
@@ -181,10 +194,10 @@ function print_cb(_, buffer, _, _, displayed, highlighted)
             end
          end
          g.buffers = b
-         weechat.bar_item_update(g.script.name)
+         w.bar_item_update(g.script.name)
       end
    end
-   return weechat.WEECHAT_RC_OK
+   return w.WEECHAT_RC_OK
 end
 
 function bar_item_cb()
@@ -196,9 +209,9 @@ function bar_item_cb()
       else
          key = "name"
       end
-      name = weechat.buffer_get_string(buf.pointer, key)
-      local number = weechat.buffer_get_integer(buf.pointer, "number")
-      local buf_type = weechat.buffer_get_string(buf.pointer, "localvar_type")
+      name = w.buffer_get_string(buf.pointer, key)
+      local number = w.buffer_get_integer(buf.pointer, "number")
+      local buf_type = w.buffer_get_string(buf.pointer, "localvar_type")
 
       local num_color, entry
       if buf.highlight > 0 then
@@ -208,9 +221,9 @@ function bar_item_cb()
       else
          num_color = cfg.color_bufnumber_msg
       end
-      entry = weechat.color(num_color) ..
+      entry = w.color(num_color) ..
               number ..
-              weechat.color(cfg.color_default) ..
+              w.color(cfg.color_default) ..
               ":" ..
               name
 
@@ -222,26 +235,26 @@ function bar_item_cb()
          else
             count_color = cfg.color_count_msg
          end
-         table.insert(counter, weechat.color(count_color) .. buf.count)
+         table.insert(counter, w.color(count_color) .. buf.count)
       end
       if buf.highlight > 0 then
          table.insert(
             counter,
-            weechat.color(cfg.color_count_highlight) .. buf.highlight)
+            w.color(cfg.color_count_highlight) .. buf.highlight)
       end
 
       if #counter > 0 then
          entry = entry ..
                  "(" ..
-                 table.concat(counter, weechat.color(cfg.color_default) .. ",") ..
-                 weechat.color(cfg.color_default) ..
+                 table.concat(counter, w.color(cfg.color_default) .. ",") ..
+                 w.color(cfg.color_default) ..
                  ")"
       end
       table.insert(list, entry)
    end
    local result = table.concat(list, cfg.separator)
    if result ~= "" then
-      return weechat.color(cfg.color_default) ..
+      return w.color(cfg.color_default) ..
              cfg.prefix ..
              result ..
              cfg.suffix
@@ -265,7 +278,7 @@ function update_positions(start_pos)
 end
 
 function buffer_unzoom_cb(_, signal, buffer)
-   local buffer_num = weechat.buffer_get_integer(buffer, "number")
+   local buffer_num = w.buffer_get_integer(buffer, "number")
    if g.buffers.numbers[buffer_num] then
       for _, pointer in ipairs(g.buffers.numbers[buffer_num]) do
          local pos = g.buffers.positions[pointer]
@@ -274,16 +287,16 @@ function buffer_unzoom_cb(_, signal, buffer)
       end
       g.buffers.numbers[buffer_num] = nil
       update_positions()
-      weechat.bar_item_update(g.script.name)
+      w.bar_item_update(g.script.name)
    end
-   return weechat.WEECHAT_RC_OK
+   return w.WEECHAT_RC_OK
 end
 
 function buffer_switch_cb(_, signal, buffer)
    if g.buffers.positions[buffer] then
       local pos = g.buffers.positions[buffer]
       local pointer = g.buffers.list[pos].pointer
-      local num = weechat.buffer_get_integer(pointer, "number")
+      local num = w.buffer_get_integer(pointer, "number")
 
       table.remove(g.buffers.list, pos)
       g.buffers.positions[buffer] = nil
@@ -302,9 +315,9 @@ function buffer_switch_cb(_, signal, buffer)
          end
       end
       update_positions(pos)
-      weechat.bar_item_update(g.script.name)
+      w.bar_item_update(g.script.name)
    end
-   return weechat.WEECHAT_RC_OK
+   return w.WEECHAT_RC_OK
 end
 
 function config_cb(_, option_name, option_value)
@@ -316,13 +329,25 @@ function config_cb(_, option_name, option_value)
          option_value = (option_value == "1")
       end
       g.config[name] = option_value
-      weechat.bar_item_update(g.script.name)
+      w.bar_item_update(g.script.name)
    end
-   return weechat.WEECHAT_RC_OK
+   return w.WEECHAT_RC_OK
+end
+
+function command_cb(_, buffer, arg)
+   if arg == "clear" then
+      g.buffers = {
+         list = {},
+         numbers = {},
+         positions = {}
+      }
+      w.bar_item_update(g.script.name)
+   end
+   return w.WEECHAT_RC_OK
 end
 
 function setup()
-   weechat.register(
+   w.register(
       g.script.name,
       g.script.author,
       g.script.version,
@@ -332,11 +357,19 @@ function setup()
 
    load_config()
 
-   weechat.bar_item_new(g.script.name, "bar_item_cb", "")
-   weechat.hook_signal("buffer_unzoomed", "buffer_unzoom_cb", "")
-   weechat.hook_signal("buffer_switch", "buffer_switch_cb", "")
-   weechat.hook_config("plugins.var.lua." .. g.script.name .. ".*", "config_cb", "")
-   weechat.hook_print("", "irc_privmsg", "", 0, "print_cb", "")
+   w.bar_item_new(g.script.name, "bar_item_cb", "")
+   w.hook_signal("buffer_unzoomed", "buffer_unzoom_cb", "")
+   w.hook_signal("buffer_switch", "buffer_switch_cb", "")
+   w.hook_config("plugins.var.lua." .. g.script.name .. ".*", "config_cb", "")
+   w.hook_print("", "irc_privmsg", "", 0, "print_cb", "")
+   w.hook_command(
+      g.script.name,
+      "Manage coldlist. Currently it only supports clearing the coldlist.",
+      "clear",
+      "clear: Clear the coldlist",
+      "clear",
+      "command_cb",
+      "")
 end
 
 setup()

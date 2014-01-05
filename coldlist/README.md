@@ -1,7 +1,8 @@
 # Coldlist
 
 A bar item that works similar to Weechat's hotlist but for showing notification
-of messages that are hidden behind currently active zoomed buffer.
+of messages that are hidden behind currently active zoomed buffer. Requires
+WeeChat 0.4.3+ (devel).
 
 ### Options
 
@@ -48,11 +49,6 @@ Color for normal message counter. Default is `brown` or the value of
 Color for private message counter. Default is `green` or the value of
 `weechat.color.status_count_private`.
 
-##### plugins.var.lua.coldlist.color_count_other
-
-Color for other message counter. Default is `green` or the value of
-`weechat.color.status_count_other`.
-
 ##### plugins.var.lua.coldlist.color_bufnumber_highlight
 
 Color for buffer number when there's a highlight. Default is `lightmagenta` or
@@ -67,12 +63,6 @@ Color for buffer number when there's normal incoming message. Default is
 
 Color for buffer number when there's new private message. Default is `green` or
 the value of `weechat.color.status_data_private`.
-
-##### plugins.var.lua.coldlist.color_bufnumber_other
-
-Color for buffer number when there's other kind of messages. Default is
-`default` or the value of `weechat.color.status_data_other`.
-
 
 
 ### Known issues
