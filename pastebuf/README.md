@@ -34,12 +34,12 @@ Timeout for running syntax highlighter in milliseconds (default: 3000)
 
 ##### plugins.var.lua.pastebuf.color_line_number
 
-Color for line numbers. See documentation for `weechat_color`][color info] for
+Color for line numbers. See documentation for [`weechat_color`][color info] for
 valid values. (default: `default,darkgray`)
 
 ##### plugins.var.lua.pastebuf.color_line
 
-Color for line content. See documentation for `weechat_color`][color info] for
+Color for line content. See documentation for [`weechat_color`][color info] for
 valid values. (default: `default,default`)
 
 ##### plugins.var.lua.pastebuf.syntax_highlighter
@@ -47,7 +47,7 @@ valid values. (default: `default,default`)
 External program that will be called to apply syntax highlighting. If the value
 contains `$lang`, it will be replaced by the name of syntax language specified
 with `/pastebuf` command. Set to empty string to disable syntax highlighting.
-(default: `pygmentize -l $lang`)
+(default: none)
 
 [color info]:
 http://weechat.org/files/doc/devel/weechat_plugin_api.en.html#_weechat_color

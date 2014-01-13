@@ -30,7 +30,7 @@ local g = {
          description = "Color for line content"
       },
       syntax_highlighter = {
-         value = "pygmentize -l $lang",
+         value = "",
          type = "string",
          description =
             "External command that will be used as syntax highlighter. " ..
