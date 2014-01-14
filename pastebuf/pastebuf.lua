@@ -50,10 +50,18 @@ local g = {
          pattern = "https://dpaste.de/(%w+)",
          raw = "https://dpaste.de/%s/raw"
       },
+      ["fpaste.org"] = {
+         pattern = "http://fpaste.org/(%w+)",
+         raw = "http://fpaste.org/%s/raw"
+      },
       ["gist.github.com"] = {
          pattern = "https://gist.github.com/([^/]+/[^/]+)",
          raw = "https://gist.github.com/%s/raw" -- default raw url for first file
                                                 -- in a gist
+      },
+      ["ideone.com"] = {
+         pattern = "http://ideone.com/(%w+)",
+         raw = "http://ideone.com/plain/%s"
       },
       ["sprunge.us"] = {
          pattern = "http://sprunge.us/(%w+)",
@@ -71,6 +79,10 @@ local g = {
          pattern = "http://pastebin.com/(%w+)",
          raw = "http://pastebin.com/raw.php?i=%s"
       },
+      ["pastebin.osuosl.org"] = {
+         pattern = "http://pastebin.osuosl.org/(%w+)",
+         raw = "http://pastebin.osuosl.org/%s/raw/"
+      },
       ["pastie.org"] = {
          pattern = "http://pastie.org/pastes/(%w+)",
          raw = "http://pastie.org/pastes/%s/download"
@@ -82,7 +94,8 @@ local g = {
       ["meta2-C"]    = "/window scroll_horiz 1",      -- arrow right
       ["meta2-D"]    = "/window scroll_horiz -1",     -- arrow left
       ["meta2-1~"]   = "/window scroll_top",          -- home
-      ["meta2-4~"]   = "/window scroll_bottom"        -- end
+      ["meta2-4~"]   = "/window scroll_bottom",       -- end
+      ["meta-c"]     = "/buffer close"                -- alt+c
    },
    buffers = {},
    sgr = {
@@ -151,6 +164,8 @@ end
 
 -- crude converter from csi sgr colors to weechat color
 function convert_csi_sgr(text)
+   local fg, bg, attr = "", "", "|"
+
    local shift_param = function(s)
       if s then
          local p1, p2, chunk = s:find("^(%d+);?")
@@ -161,12 +176,12 @@ function convert_csi_sgr(text)
    end
 
    local convert_cb = function(code)
-      local fg, bg, attr = "", "", ""
-
       local chunk, code = shift_param(code)
       while chunk do
          chunk = tonumber(chunk)
-         if g.sgr.attributes[chunk] then
+         if chunk == 0 then
+            attr = ""
+         elseif g.sgr.attributes[chunk] then
             attr = g.sgr.attributes[chunk]
          elseif chunk >= 30 and chunk <= 37 then
             fg = g.sgr.colors[ chunk - 30 ]
@@ -201,9 +216,14 @@ function convert_csi_sgr(text)
          end
          chunk, code = shift_param(code)
       end
-      local result = attr .. fg
-      if bg and bg ~= "" then
-         result = result .. "," .. bg
+      local result
+      if fg == "" and bg == "" and attr == "" then
+         result = "reset"
+      else
+         result = attr .. fg
+         if bg and bg ~= "" then
+            result = result .. "," .. bg
+         end
       end
       return w.color(result)
    end
