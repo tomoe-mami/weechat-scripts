@@ -19,7 +19,16 @@ Supported sites:
 
 If the optional syntax language parameter is specified, the text will be
 highlighted using external command specified in
-`plugins.var.lua.pastebuf.syntax_highlighter` (see **Options** below).
+`plugins.var.lua.pastebuf.syntax_highlighter` (see [**Options**](#options)).
+
+
+### Command inside paste buffer
+
+Currently there's only 1 command you can use inside paste buffer:
+
+    lang <new-syntax-language>
+
+This will change the syntax language of current buffer.
 
 
 ### Options

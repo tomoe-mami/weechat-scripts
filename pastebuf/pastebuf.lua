@@ -10,14 +10,19 @@ local g = {
    config = {},
    defaults = {
       fetch_timeout = {
-         value = 5 * 1000,
+         value = 12000,
          type = "number",
-         description = "Timeout for fetching URL"
+         description = "Timeout for fetching URL (in milliseconds)"
       },
       highlighter_timeout = {
-         value = 3 * 1000,
+         value = 3000,
          type = "number",
-         description = "Timeout for syntax highlighter"
+         description = "Timeout for syntax highlighter (in milliseconds)"
+      },
+      show_line_number = {
+         value = true,
+         type = "boolean",
+         description = "Show line number"
       },
       color_line_number = {
          value = "default,darkgray",
@@ -35,6 +40,11 @@ local g = {
          description =
             "External command that will be used as syntax highlighter. " ..
             "$lang will be replaced by the name of syntax language"
+      },
+      indent_width = {
+         value = 4,
+         type = "number",
+         description = "Indentation width"
       }
    },
    sites = {
@@ -89,15 +99,20 @@ local g = {
       }
    },
    keys = {
-      ["meta2-A"]    = "/window scroll_up",           -- arrow up
-      ["meta2-B"]    = "/window scroll_down",         -- arrow down
+      ["meta2-A"]    = "/window scroll -1",           -- arrow up
+      ["meta2-B"]    = "/window scroll 1",            -- arrow down
       ["meta2-C"]    = "/window scroll_horiz 1",      -- arrow right
       ["meta2-D"]    = "/window scroll_horiz -1",     -- arrow left
+      ["meta-OA"]    = "/window scroll -10",          -- ctrl+arrow up
+      ["meta-OB"]    = "/window scroll 10",           -- ctrl+arrow down
+      ["meta-OC"]    = "/window scroll_horiz 10",     -- ctrl+arrow right
+      ["meta-OD"]    = "/window scroll_horiz -10",    -- ctrl+arrow left
       ["meta2-1~"]   = "/window scroll_top",          -- home
       ["meta2-4~"]   = "/window scroll_bottom",       -- end
       ["meta-c"]     = "/buffer close"                -- alt+c
    },
    buffers = {},
+   actions = {},
    sgr = {
       attributes = {
          [1] = "*", -- bold
@@ -127,19 +142,33 @@ local g = {
    }
 }
 
+function convert_plugin_option_value(opt_type, opt_value)
+   if opt_type == "number" or opt_type == "boolean" then
+      opt_value = tonumber(opt_value)
+      if opt_type == "boolean" then
+         opt_value = (opt_value ~= 0)
+      end
+   end
+   return opt_value
+end
+
 function load_config()
    for opt_name, info in pairs(g.defaults) do
       if w.config_is_set_plugin(opt_name) == 0 then
-         local val = info.value or ""
+         local val
+         if info.type == "boolean" then
+            val = info.value and 1 or 0
+         elseif info.type == "number" then
+            val = info.value or 0
+         else
+            val = info.value or ""
+         end
          w.config_set_plugin(opt_name, val)
          w.config_set_desc_plugin(opt_name, info.description or "")
          g.config[opt_name] = val
       else
          local val = w.config_get_plugin(opt_name)
-         if info.type == "number" then
-            val = tonumber(val)
-         end
-         g.config[opt_name] = val
+         g.config[opt_name] = convert_plugin_option_value(info.type, val)
       end
    end
 end
@@ -147,19 +176,22 @@ end
 function config_cb(_, opt_name, opt_value)
    local name = opt_name:match("^plugins%.var%.lua%." .. g.script.name .. "%.(.+)$")
    if name and g.defaults[name] then
-      if g.defaults[name].type == "number" then
-         opt_value = tonumber(opt_value)
-      end
-      g.config[name] = opt_value
+      g.config[name] = convert_plugin_option_value(g.defaults[name].type, opt_value)
    end
 end
 
-function split_args(s)
-   local t = {}
-   for v in s:gmatch("%S+") do
-      table.insert(t, v)
+function bind_keys(buffer, flag)
+   local prefix = flag and "key_bind_" or "key_unbind_"
+   for key, command in pairs(g.keys) do
+      w.buffer_set(buffer, prefix .. key, flag and command or "")
    end
-   return t
+end
+
+-- only expands tabs at the start of line
+function expand_indent(s)
+   return s:gsub("^(\t+)", function (t)
+      return string.rep(" " , #t * g.config.indent_width)
+   end)
 end
 
 -- crude converter from csi sgr colors to weechat color
@@ -231,11 +263,6 @@ function convert_csi_sgr(text)
    return text:gsub("\27%[([%d;]*)m", convert_cb)
 end
 
-function get_total_lines(s)
-   local _, n = string.gsub(s .. "\n", ".-\n[^\n]*", "")
-   return n
-end
-
 function message(s)
    w.print("", g.script.name .. "\t" .. s)
 end
@@ -267,11 +294,62 @@ end
 function buffer_close_cb(_, buffer)
    local short_name = w.buffer_get_string(buffer, "short_name")
    if g.buffers[short_name] then
-      if g.buffers[short_name].hook and g.buffers[short_name].hook ~= "" then
-         w.unhook(g.buffers[short_name].hook)
+      local buffer = g.buffers[short_name]
+      if buffer.hook and buffer.hook ~= "" then
+         w.unhook(buffer.hook)
+      end
+      if buffer.file and io.type(buffer.file) == "file" then
+         buffer.file:close()
+      end
+      if buffer.tmp_name then
+         os.remove(buffer.tmp_name)
       end
       g.buffers[short_name] = nil
    end
+end
+
+function action_change_language(buffer, short_name, new_lang)
+   if not g.config.syntax_highlighter or g.config.syntax_highlighter == "" then
+      return
+   end
+
+   new_lang = new_lang:match("^%s*(%S+)")
+   if new_lang then
+      local current_lang = w.buffer_get_string(buffer.pointer, "localvar_lang")
+      new_lang = new_lang:lower()
+      if current_lang ~= new_lang then
+         local fp = open_file(buffer.tmp_name)
+         if fp then
+            buffer.file = fp
+            w.buffer_set(buffer.pointer, "localvar_set_lang", new_lang)
+            run_syntax_highlighter(short_name, fp)
+            fp:close()
+            buffer.file = nil
+         end
+      end
+   end
+end
+
+function buffer_input_cb(_, pointer, input)
+   local action, param = input:match("^%s*(%S+)%s*(.*)%s*$")
+   if action then
+      local short_name = w.buffer_get_string(pointer, "short_name")
+      local buffer = g.buffers[short_name]
+      if buffer then
+         if buffer.hook or (buffer.file and io.type(buffer.file) == "file") then
+            message("It's currently not possible to perform any action while the " ..
+                    "paste is still being fetched or its content is still being processed")
+            return w.WEECHAT_RC_OK
+         end
+         if g.actions[action] then
+            local callback = g.actions[action]
+            callback(buffer, short_name, param)
+         else
+            message(string.format("Unknown action: %s", action))
+         end
+      end
+   end
+   return w.WEECHAT_RC_OK
 end
 
 function create_buffer(site)
@@ -280,14 +358,12 @@ function create_buffer(site)
       local buffer = g.buffers[short_name]
       if not buffer.hook then
          w.buffer_clear(buffer.pointer)
-         w.buffer_set(buffer, "localvar_del_paste", "")
-         w.buffer_set(buffer, "localvar_del_highlight", "")
       end
       w.buffer_set(buffer.pointer, "display", "1")
       return buffer, short_name
    else
       local name = g.script.name .. ":" .. short_name
-      local buffer = w.buffer_new(name, "", "", "buffer_close_cb", "")
+      local buffer = w.buffer_new(name, "buffer_input_cb", "", "buffer_close_cb", "")
 
       if buffer and buffer ~= "" then
          local title = string.format("%s: Fetching %s", g.script.name, site.url)
@@ -296,10 +372,7 @@ function create_buffer(site)
          w.buffer_set(buffer, "title", title)
          w.buffer_set(buffer, "short_name", short_name)
          w.buffer_set(buffer, "display", "1")
-
-         for key, cmd in pairs(g.keys) do
-            w.buffer_set(buffer, "key_bind_" .. key, cmd)
-         end
+         bind_keys(buffer, true)
 
          g.buffers[short_name] = { pointer = buffer }
          return g.buffers[short_name], short_name
@@ -308,39 +381,31 @@ function create_buffer(site)
 end
 
 function request_raw_paste(raw_url, short_name)
+   local tmp_name = os.tmpname()
+   local options = {
+      useragent = g.useragent,
+      file_out = tmp_name
+   }
+
+   g.buffers[short_name].tmp_name = tmp_name
    g.buffers[short_name].hook = w.hook_process_hashtable(
       "url:" .. raw_url,
-      { useragent = g.useragent },
+      options,
       g.config.fetch_timeout,
-      "receive_response_cb",
+      "receive_raw_paste_cb",
       short_name)
 end
 
-function receive_response_cb(short_name, request_url, status, response, err)
+function receive_raw_paste_cb(short_name, request_url, status, response, err)
    if g.buffers[short_name] then
       local buffer = g.buffers[short_name]
       local is_complete = (status == 0)
 
-      if is_complete or status == w.WEECHAT_HOOK_PROCESS_RUNNING then
-         w.buffer_set(
-            buffer.pointer,
-            "localvar_set_paste",
-            w.buffer_get_string(buffer.pointer, "localvar_paste") .. response)
-
-         if is_complete then
-            display_paste(buffer.pointer, true)
-            w.buffer_set(
-               buffer.pointer,
-               "title",
-               string.format(
-                  "%s: %s",
-                  g.script.name,
-                  w.buffer_get_string(buffer.pointer, "localvar_url")))
-
-            if g.buffers[short_name].hook then
-               g.buffers[short_name].hook = nil
-            end
+      if status == 0 then
+         if buffer.hook then
+            buffer.hook = nil
          end
+         display_paste(short_name)
          return w.WEECHAT_RC_OK
       elseif status >= 1 or status == w.WEECHAT_HOOK_PROCESS_ERROR then
          if not err or err == "" then
@@ -353,33 +418,71 @@ function receive_response_cb(short_name, request_url, status, response, err)
    end
 end
 
-function print_line(buffer, y, num_width, content)
-   local line = string.format(
-         "%s %" .. num_width .. "d %s %s",
-         w.color(g.config.color_line_number),
-         y + 1,
-         w.color(g.config.color_line),
-         content)
-   w.print_y(buffer, y, line)
+function read_file(fp)
+   local lines, n = {}, 0
+   for line in fp:lines() do
+      n = n + 1
+      lines[n] = line
+   end
+   return lines, n
 end
 
-function syntax_highlight_cb(buffer, cmd, status, output, err)
+function display_plain(short_name, fp)
+   local pointer = g.buffers[short_name].pointer
+   local total_lines = 0
+   if g.config.show_line_number then
+      local lines
+      lines, total_lines = read_file(fp)
+      if lines then
+         local num_col_width = #tostring(total_lines)
+         local y = 0
+         for _, line in ipairs(lines) do
+            print_line(pointer, y, num_col_width, expand_indent(line))
+            y = y + 1
+         end
+      end
+   else
+      for line in fp:lines() do
+         print_line(pointer, total_lines, nil, expand_indent(line))
+         total_lines = total_lines + 1
+      end
+   end
+   w.buffer_set(pointer, "localvar_total_lines", total_lines)
+end
+
+function display_highlighted(short_name)
+   local buffer = g.buffers[short_name]
+   local total_lines = 0
+
+   buffer.highlighted = convert_csi_sgr(buffer.highlighted)
+   if g.config.show_line_number then
+      local _
+      _, total_lines = string.gsub(buffer.highlighted .. "\n", ".-\n[^\n]*", "")
+      local num_col_width = #tostring(total_lines)
+      local y = 0
+      for line in buffer.highlighted:gmatch("(.-)\n") do
+         print_line(buffer.pointer, y, num_col_width, line)
+         y = y + 1
+      end
+   else
+      for line in buffer.highlighted:gmatch("(.-)\n") do
+         print_line(buffer.pointer, total_lines, nil, line)
+         total_lines = total_lines + 1
+      end
+   end
+   buffer.highlighted = nil
+   w.buffer_set(pointer, "localvar_total_lines", total_lines)
+end
+
+function syntax_highlight_cb(short_name, cmd, status, output, err)
    local is_complete = (status == 0)
    if is_complete or status == w.WEECHAT_HOOK_PROCESS_RUNNING then
-      w.buffer_set(
-         buffer,
-         "localvar_set_highlight",
-         w.buffer_get_string(buffer, "localvar_highlight") .. output)
-
+      local buffer = g.buffers[short_name]
+      buffer.highlighted = buffer.highlighted .. output
       if is_complete then
-         local highlighted = w.buffer_get_string(buffer, "localvar_highlight")
-         highlighted = convert_csi_sgr(highlighted)
-
-         w.buffer_set(buffer, "localvar_set_paste", highlighted)
-         w.buffer_set(buffer, "localvar_del_highlight", "")
-         display_paste(buffer, false)
+         display_highlighted(short_name)
+         return w.WEECHAT_RC_OK
       end
-      return w.WEECHAT_RC_OK
    elseif status >= 1 or status == w.WEECHAT_HOOK_PROCESS_ERROR then
       if not err or err == "" then
          err = "Unable to run syntax highlighter"
@@ -389,63 +492,82 @@ function syntax_highlight_cb(buffer, cmd, status, output, err)
    end
 end
 
-function run_syntax_highlighter(buffer, lang)
-   local cmd = w.buffer_string_replace_local_var(buffer, g.config.syntax_highlighter)
+function run_syntax_highlighter(short_name, fp)
+   local buffer = g.buffers[short_name]
+   local cmd = w.buffer_string_replace_local_var(buffer.pointer, g.config.syntax_highlighter)
+   buffer.highlighted = ""
+
    local hook = w.hook_process_hashtable(
       cmd,
       { stdin = "1" },
       g.config.highlighter_timeout,
       "syntax_highlight_cb",
-      buffer)
+      short_name)
 
    if hook and hook ~= "" then
-      w.hook_set(hook, "stdin", w.buffer_get_string(buffer, "localvar_paste"))
+      for line in fp:lines() do
+         w.hook_set(hook, "stdin", expand_indent(line) .. "\n")
+      end
       w.hook_set(hook, "stdin_close", "")
    end
 end
 
-function display_paste(buffer, run_highlighter)
-   local lang = w.buffer_get_string(buffer, "localvar_lang")
-   if g.config.syntax_highlighter and
-      g.config.syntax_highlighter ~= "" and
-      run_highlighter and
-      lang and lang ~= "" then
-      run_syntax_highlighter(buffer, lang)
-   end
-
-   local text = w.buffer_get_string(buffer, "localvar_paste")
-   local total_lines = w.buffer_get_string(buffer, "localvar_total_lines")
-   if not total_lines or total_lines == "" then
-      total_lines = tostring(get_total_lines(text))
-      w.buffer_set(buffer, "localvar_set_total_lines", total_lines)
-   end
-   local num_width = #total_lines
-
-   local y = 0
-   for line in text:gmatch("(.-)\n") do
-      print_line(buffer, y, num_width, line)
-      y = y + 1
-   end
-
-   if not run_highlighter then
-      w.buffer_set(buffer, "localvar_del_paste", "")
-      w.buffer_set(buffer, "localvar_del_total_lines", "")
+function open_file(filename)
+   local fp = io.open(filename, "r")
+   if not fp then
+      message(string.format("Unable to load file %s", filename))
+   else
+      return fp
    end
 end
 
-function command_cb(_, current_buffer, param)
-   param = param:gsub("^%s+", ""):gsub("%s+$", "")
-   if param == "" then
-      message(string.format("Usage: /%s <pastebin-url> [syntax]", g.script.name))
-      return w.WEECHAT_RC_ERROR
-   end
+function display_paste(short_name)
+   local buffer = g.buffers[short_name]
+   local fp = open_file(buffer.tmp_name)
+   if fp then
+      buffer.file = fp
+      local func
+      local lang = w.buffer_get_string(buffer.pointer, "localvar_lang")
 
-   param = split_args(param)
-   local url, lang = param[1], param[2]
+      if g.config.syntax_highlighter
+         and g.config.syntax_highlighter ~= ""
+         and lang and lang ~= "" then
+         func = run_syntax_highlighter
+      else
+         func = display_plain
+      end
+
+      func(short_name, fp)
+      fp:close()
+      buffer.file = nil
+
+      w.buffer_set(
+         buffer.pointer,
+         "title",
+         string.format(
+            "%s: %s",
+            g.script.name,
+            w.buffer_get_string(buffer.pointer, "localvar_url")))
+   end
+end
+
+function print_line(buffer, y, num_width, content)
+   local line = w.color(g.config.color_line) .. " " .. content
+   if num_width then
+      line = string.format(
+         "%s %" .. num_width .. "d %s",
+         w.color(g.config.color_line_number),
+         y + 1,
+         line)
+   end
+   w.print_y(buffer, y, line)
+end
+
+function open_paste(url, lang)
    local site = get_site_config(url)
    if not site then
       message("Unsupported site: " .. url)
-      return w.WEECHAT_RC_ERROR
+      return w.WEECHAT_RC_OK
    end
 
    local buffer, short_name = create_buffer(site)
@@ -457,7 +579,7 @@ function command_cb(_, current_buffer, param)
          w.buffer_set(buffer.pointer, "localvar_set_id", site.id)
 
          if lang and lang ~= "" then
-            w.buffer_set(buffer.pointer, "localvar_set_lang", lang)
+            w.buffer_set(buffer.pointer, "localvar_set_lang", lang:lower())
          end
 
          request_raw_paste(raw_url, short_name)
@@ -466,8 +588,17 @@ function command_cb(_, current_buffer, param)
    return w.WEECHAT_RC_OK
 end
 
-function setup()
+function command_cb(_, current_buffer, param)
+   local url, lang = param:match("^%s*(%S+)%s*(%S*)")
+   if not url then
+      message(string.format("Usage: /%s <pastebin-url> [syntax-language]", g.script.name))
+   else
+      open_paste(url, lang)
+   end
+   return w.WEECHAT_RC_OK
+end
 
+function setup()
    w.register(
       g.script.name,
       g.script.author,
@@ -479,6 +610,10 @@ function setup()
    load_config()
    w.hook_config("plugins.var.lua." .. g.script.name .. ".*", "config_cb", "")
    g.useragent = string.format("%s v%s", g.script.name, g.script.version)
+
+   g.actions = {
+      lang = action_change_language
+   }
 
    local sites = {}
    for name,_ in pairs(g.sites) do
