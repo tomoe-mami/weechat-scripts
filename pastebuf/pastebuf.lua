@@ -49,52 +49,51 @@ local g = {
    },
    sites = {
       ["bpaste.net"] = {
-         pattern = "http://bpaste.net/show/(%w+)",
+         pattern = "^http://bpaste%.net/show/(%w+)",
          raw = "http://bpaste.net/raw/%s/"
       },
       ["dpaste.com"] = {
-         pattern = "http://dpaste.com/(%w+)",
+         pattern = "^http://dpaste%.com/(%w+)",
          raw = "http://dpaste.com/%s/plain/"
       },
       ["dpaste.de"] = {
-         pattern = "https://dpaste.de/(%w+)",
+         pattern = "^https://dpaste%.de/(%w+)",
          raw = "https://dpaste.de/%s/raw"
       },
       ["fpaste.org"] = {
-         pattern = "http://fpaste.org/(%w+)",
+         pattern = "^http://fpaste%.org/(%w+/?%w*)",
          raw = "http://fpaste.org/%s/raw"
       },
       ["gist.github.com"] = {
-         pattern = "https://gist.github.com/([^/]+/[^/]+)",
+         pattern = "^https://gist%.github%.com/([^/]+/[^/]+)",
          raw = "https://gist.github.com/%s/raw" -- default raw url for first file
                                                 -- in a gist
       },
       ["ideone.com"] = {
-         pattern = "http://ideone.com/(%w+)",
+         pattern = "^http://ideone%.com/(%w+)",
          raw = "http://ideone.com/plain/%s"
       },
       ["sprunge.us"] = {
-         pattern = "http://sprunge.us/(%w+)",
+         pattern = "^http://sprunge%.us/(%w+)",
          raw = "http://sprunge.us/%s"
       },
       ["paste.debian.net"] = {
-         pattern = "http://paste.debian.net/(%d+)",
+         pattern = "^http://paste%.debian%.net/(%d+)",
          raw = "http://paste.debian.net/plain/%s"
       },
       ["pastebin.ca"] = {
-         pattern = "http://pastebin.ca/(%w+)",
+         pattern = "^http://pastebin%.ca/(%w+)",
          raw = "http://pastebin.ca/raw/%s"
       },
       ["pastebin.com"] = {
-         pattern = "http://pastebin.com/(%w+)",
+         pattern = "^http://pastebin%.com/(%w+)",
          raw = "http://pastebin.com/raw.php?i=%s"
       },
       ["pastebin.osuosl.org"] = {
-         pattern = "http://pastebin.osuosl.org/(%w+)",
+         pattern = "^http://pastebin%.osuosl%.org/(%w+)",
          raw = "http://pastebin.osuosl.org/%s/raw/"
       },
       ["pastie.org"] = {
-         pattern = "http://pastie.org/pastes/(%w+)",
          raw = "http://pastie.org/pastes/%s/download"
       }
    },
@@ -708,6 +707,25 @@ function handler_gist(site, url)
    end
 end
 
+function handler_pastie(site, url, lang)
+   local first, second = url:match("^http://pastie%.org/(%w+)/?(%w*)")
+   local pastie_id
+   if first == "pastes" and second and second ~= "" then
+      pastie_id = second
+   else
+      pastie_id = first
+   end
+
+   site = {
+      url = url,
+      raw = site.raw,
+      host = "pastie.org",
+      id = pastie_id
+   }
+
+   handler_normal(site, url, lang)
+end
+
 function handler_normal(site, url, lang)
    local short_name = string.format("%s:%s", site.host, site.id)
    if g.buffers[short_name] then
@@ -772,6 +790,7 @@ function setup()
    if json then
       g.sites["gist.github.com"].handler = handler_gist
    end
+   g.sites["pastie.org"].handler = handler_pastie
 
    load_config()
    w.hook_config("plugins.var.lua." .. g.script.name .. ".*", "config_cb", "")
