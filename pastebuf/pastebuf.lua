@@ -215,9 +215,13 @@ end
 
 -- only expands tabs at the start of line
 function expand_indent(s)
-   return s:gsub("^(\t+)", function (t)
-      return string.rep(" " , #t * g.config.indent_width)
-   end)
+   if g.config.indent_width > 0 then
+      return s:gsub("^(\t+)", function (t)
+         return string.rep(" " , #t * g.config.indent_width)
+      end)
+   else
+      return s
+   end
 end
 
 -- crude converter from csi sgr colors to weechat color
@@ -330,6 +334,20 @@ function buffer_close_cb(_, buffer)
       if buffer.tmp_name then
          os.remove(buffer.tmp_name)
       end
+      if buffer.parent and g.buffers[buffer.parent] then
+         local p = buffer.parent
+         if g.buffers[p].sub and g.buffers[p].sub[short_name] then
+            g.buffers[p].sub[short_name] = nil
+            local sibling_exists = false
+            for _ in pairs(g.buffers[p].sub) do
+               sibling_exists = true
+               break
+            end
+            if not sibling_exists then
+               g.buffers[p] = nil
+            end
+         end
+      end
       g.buffers[short_name] = nil
    end
 end
@@ -373,13 +391,22 @@ function action_change_language(buffer, short_name, new_lang)
       message("You need to specify the name of syntax language after `lang`")
    else
       local current_lang = w.buffer_get_string(buffer.pointer, "localvar_lang")
+      if not current_lang or current_lang == "" then
+         current_lang = "none"
+      end
+
       new_lang = new_lang:lower()
       if current_lang ~= new_lang then
          local fp = open_file(buffer.tmp_name)
          if fp then
             buffer.file = fp
-            w.buffer_set(buffer.pointer, "localvar_set_lang", new_lang)
-            run_syntax_highlighter(short_name, fp)
+            if new_lang ~= "none" then
+               w.buffer_set(buffer.pointer, "localvar_set_lang", new_lang)
+               run_syntax_highlighter(short_name, fp)
+            else
+               w.buffer_set(buffer.pointer, "localvar_del_lang", "")
+               display_plain(short_name, fp)
+            end
             fp:close()
             buffer.file = nil
          end
@@ -608,7 +635,7 @@ function print_line(buffer, y, num_width, content)
    w.print_y(buffer, y, line)
 end
 
-function gist_display_file(main_id, main_url, entry)
+function gist_display_file(parent_name, main_id, main_url, entry)
    local param = {
       host = "gist.github.com",
       id = string.format("%s/%s", main_id, entry.filename)
@@ -624,6 +651,7 @@ function gist_display_file(main_id, main_url, entry)
          end
       end
 
+      buffer.parent = parent_name
       buffer.tmp_name = os.tmpname()
       local fp = io.open(buffer.tmp_name, "w+")
       if fp then
@@ -643,8 +671,9 @@ function gist_display_file(main_id, main_url, entry)
          w.buffer_set(
             buffer.pointer,
             "title",
-            string.format("%s: %s#%s", g.script.name, main_url, entry.filename))
+            string.format("%s: %s (file: %s)", g.script.name, main_url, entry.filename))
       end
+      return buffer, short_name
    end
 end
 
@@ -658,8 +687,14 @@ function gist_process_info(buffer, short_name)
          message(string.format("Gist error: %s", info.message))
       else
          if info.files and type(info.files) == "table" then
+            buffer.sub = {}
             for _, entry in pairs(info.files) do
-               gist_display_file(info.id, info.html_url, entry)
+               local sub_buffer, sub_short_name =
+                  gist_display_file(short_name, info.id, info.html_url, entry)
+
+               if sub_buffer then
+                  buffer.sub[sub_short_name] = sub_buffer.pointer
+               end
             end
          end
       end
@@ -704,6 +739,9 @@ function handler_gist(site, url)
          g.config.fetch_timeout,
          "gist_info_cb",
          short_name)
+   else
+      message("Gist is already opened. Close all buffers related to this " ..
+              "gist first before making another request")
    end
 end
 
@@ -769,6 +807,9 @@ end
 
 function command_cb(_, current_buffer, param)
    local url, lang = param:match("^%s*(%S+)%s*(%S*)")
+   if lang and lang == "none" then
+      lang = nil
+   end
    if not url then
       message(string.format("Usage: /%s <pastebin-url> [syntax-language]", g.script.name))
    else

@@ -2,15 +2,18 @@
 
 View the content of pastebin inside buffer. Requires Weechat 0.4.3 or higher.
 
-
 Supported sites:
 
 - bpaste.net
+- dpaste.com
 - dpaste.de
+- fpaste.org
 - gist.github.com
+- ideone.com
 - paste.debian.net
 - pastebin.ca
 - pastebin.com
+- pastebin.osuosl.org
 - pastie.org
 - sprunge.us
 
@@ -32,7 +35,8 @@ highlighted using external command specified in
 
     lang <new-syntax-language>
 
-Change the syntax language of current buffer.
+Change the syntax language of current buffer. Use `none` to disable syntax
+highlighting.
 
     save <filename>
 
@@ -51,12 +55,16 @@ Timeout for running syntax highlighter in milliseconds (default: `3000`)
 
 ##### plugins.var.lua.pastebuf.show_line_number
 
-Set to `1` to enable line number and `0` to disable it. (default: 1)
+Set to `1` to enable line number and `0` to disable it. (default: `1`)
 
 ##### plugins.var.lua.pastebuf.indent_width
 
 Numbers of spaces used for indentation. All tab characters at the start of line
-will be replaced by these spaces. (default: `4`)
+will be replaced by these spaces. Set to `0` to disable tab replacement.
+(default: `4`)
+
+*Note:* In Weechat-devel (the next stable 0.4.3), you can use option
+`weechat.look.tab_width` to control the width of tabs.
 
 ##### plugins.var.lua.pastebuf.color_line_number
 
@@ -82,10 +90,8 @@ http://weechat.org/files/doc/devel/weechat_plugin_api.en.html#_weechat_color
 
 ### Known Issues
 
-- Script doesn't know how to detect the syntax language of a paste
-- Script doesn't know how to get syntax language info selected in the original
-  paste.
-- If a gist contain multiple files, only the first file will be fetch.
+Syntax language detection currently only works for gist and it requires
+lua-cjson module.
 
 ### Nice to have
 
