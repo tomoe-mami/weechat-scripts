@@ -1,6 +1,7 @@
 # pastebuf
 
-View the content of pastebin inside buffer.
+View the content of pastebin inside buffer. Requires Weechat 0.4.3 or higher.
+
 
 Supported sites:
 
@@ -13,6 +14,11 @@ Supported sites:
 - pastie.org
 - sprunge.us
 
+For gist with multiple files, only the first file in a gist will be fetch. To
+enable fetching multiple files, you have to install [lua-cjson][] module.
+
+[lua-cjson]: https://github.com/mpx/lua-cjson
+
 ### Usage
 
     /pastebuf <url-of-the-paste> [<optional-syntax-language>]
@@ -24,22 +30,33 @@ highlighted using external command specified in
 
 ### Command inside paste buffer
 
-Currently there's only 1 command you can use inside paste buffer:
-
     lang <new-syntax-language>
 
-This will change the syntax language of current buffer.
+Change the syntax language of current buffer.
+
+    save <filename>
+
+Save the content of current buffer to a file.
 
 
 ### Options
 
 ##### plugins.var.lua.pastebuf.fetch_timeout
 
-Timeout for fetching the paste URL in milliseconds (default: 5000)
+Timeout for fetching the paste URL in milliseconds (default: `12000`)
 
 ##### plugins.var.lua.pastebuf.highlighter_timeout
 
-Timeout for running syntax highlighter in milliseconds (default: 3000)
+Timeout for running syntax highlighter in milliseconds (default: `3000`)
+
+##### plugins.var.lua.pastebuf.show_line_number
+
+Set to `1` to enable line number and `0` to disable it. (default: 1)
+
+##### plugins.var.lua.pastebuf.indent_width
+
+Numbers of spaces used for indentation. All tab characters at the start of line
+will be replaced by these spaces. (default: `4`)
 
 ##### plugins.var.lua.pastebuf.color_line_number
 
@@ -58,6 +75,7 @@ contains `$lang`, it will be replaced by the name of syntax language specified
 with `/pastebuf` command. Set to empty string to disable syntax highlighting.
 (default: none)
 
+
 [color info]:
 http://weechat.org/files/doc/devel/weechat_plugin_api.en.html#_weechat_color
 
@@ -71,7 +89,4 @@ http://weechat.org/files/doc/devel/weechat_plugin_api.en.html#_weechat_color
 
 ### Nice to have
 
-- Save the paste to a file
 - Search inside the content of a paste
-- Change the syntax of an already opened paste without issuing `/pastebuf`
-  command again
