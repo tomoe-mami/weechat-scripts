@@ -142,6 +142,33 @@ local g = {
    }
 }
 
+function prepare_modules()
+   local modules = {
+      cjson = "json"
+   }
+
+   local module_exists = function (name)
+     if package.loaded[name] then
+       return true
+     else
+       for _, searcher in ipairs(package.searchers or package.loaders) do
+         local loader = searcher(name)
+         if type(loader) == "function" then
+           package.preload[name] = loader
+           return true
+         end
+       end
+       return false
+     end
+   end
+
+   for name, alias in pairs(modules) do
+      if module_exists(name) then
+         _G[alias] = require(name)
+      end
+   end
+end
+
 function convert_plugin_option_value(opt_type, opt_value)
    if opt_type == "number" or opt_type == "boolean" then
       opt_value = tonumber(opt_value)
@@ -308,13 +335,44 @@ function buffer_close_cb(_, buffer)
    end
 end
 
+function action_save(buffer, short_name, filename)
+   if not filename or filename == "" then
+      message("You need to specify destination filename after `save`")
+   else
+      filename = filename:gsub("^~/", os.getenv("HOME") .. "/")
+      local output = open_file(filename, "w")
+      if output then
+         local input = open_file(buffer.tmp_name)
+         if input then
+            output:setvbuf("no")
+            local chunk_size, written, chunk = 64 * 1024, 0
+            chunk = input:read(chunk_size)
+            while chunk do
+               output:write(chunk)
+               written = written + #chunk
+               chunk = input:read(chunk_size)
+            end
+            input:close()
+            message(string.format(
+               "%d byte%s written to %s",
+               written,
+               (written == 1 and "" or "s"),
+               filename))
+         end
+         output:close()
+      end
+   end
+end
+
 function action_change_language(buffer, short_name, new_lang)
    if not g.config.syntax_highlighter or g.config.syntax_highlighter == "" then
       return
    end
 
    new_lang = new_lang:match("^%s*(%S+)")
-   if new_lang then
+   if not new_lang then
+      message("You need to specify the name of syntax language after `lang`")
+   else
       local current_lang = w.buffer_get_string(buffer.pointer, "localvar_lang")
       new_lang = new_lang:lower()
       if current_lang ~= new_lang then
@@ -354,29 +412,17 @@ end
 
 function create_buffer(site)
    local short_name = string.format("%s:%s", site.host, site.id)
-   if g.buffers[short_name] then
-      local buffer = g.buffers[short_name]
-      if not buffer.hook then
-         w.buffer_clear(buffer.pointer)
-      end
-      w.buffer_set(buffer.pointer, "display", "1")
-      return buffer, short_name
-   else
-      local name = g.script.name .. ":" .. short_name
-      local buffer = w.buffer_new(name, "buffer_input_cb", "", "buffer_close_cb", "")
+   local name = string.format("%s:%s", g.script.name, short_name)
+   local buffer = w.buffer_new(name, "buffer_input_cb", "", "buffer_close_cb", "")
 
-      if buffer and buffer ~= "" then
-         local title = string.format("%s: Fetching %s", g.script.name, site.url)
+   if buffer and buffer ~= "" then
+      w.buffer_set(buffer, "type", "free")
+      w.buffer_set(buffer, "short_name", short_name)
+      w.buffer_set(buffer, "display", "1")
+      bind_keys(buffer, true)
 
-         w.buffer_set(buffer, "type", "free")
-         w.buffer_set(buffer, "title", title)
-         w.buffer_set(buffer, "short_name", short_name)
-         w.buffer_set(buffer, "display", "1")
-         bind_keys(buffer, true)
-
-         g.buffers[short_name] = { pointer = buffer }
-         return g.buffers[short_name], short_name
-      end
+      g.buffers[short_name] = { pointer = buffer }
+      return g.buffers[short_name], short_name
    end
 end
 
@@ -512,10 +558,10 @@ function run_syntax_highlighter(short_name, fp)
    end
 end
 
-function open_file(filename)
-   local fp = io.open(filename, "r")
+function open_file(filename, mode)
+   local fp = io.open(filename, mode or "r")
    if not fp then
-      message(string.format("Unable to load file %s", filename))
+      message(string.format("Unable to open file %s", filename))
    else
       return fp
    end
@@ -563,17 +609,119 @@ function print_line(buffer, y, num_width, content)
    w.print_y(buffer, y, line)
 end
 
-function open_paste(url, lang)
-   local site = get_site_config(url)
-   if not site then
-      message("Unsupported site: " .. url)
-      return w.WEECHAT_RC_OK
+function gist_display_file(main_id, main_url, entry)
+   local param = {
+      host = "gist.github.com",
+      id = string.format("%s/%s", main_id, entry.filename)
+   }
+
+   local buffer, short_name = create_buffer(param)
+   if buffer then
+      local use_highlighter = false
+      if entry.language and entry.language ~= json.null then
+         w.buffer_set(buffer.pointer, "localvar_set_lang", entry.language:lower())
+         if g.config.syntax_highlighter and g.config.syntax_highlighter ~= "" then
+            use_highlighter = true
+         end
+      end
+
+      buffer.tmp_name = os.tmpname()
+      local fp = io.open(buffer.tmp_name, "w+")
+      if fp then
+         buffer.file = fp
+         fp:setvbuf("no")
+         fp:write(entry.content)
+         fp:seek("set")
+
+         if use_highlighter then
+            run_syntax_highlighter(short_name, fp)
+         else
+            display_plain(short_name, fp)
+         end
+         fp:close()
+         buffer.file = nil
+
+         w.buffer_set(
+            buffer.pointer,
+            "title",
+            string.format("%s: %s#%s", g.script.name, main_url, entry.filename))
+      end
+   end
+end
+
+function gist_process_info(buffer, short_name)
+   if not buffer.temp or buffer.temp == "" then
+      message("Gist error: No response received")
+   end
+   local info = json.decode(buffer.temp)
+   if info and type(info) == "table" then
+      if info.message then
+         message(string.format("Gist error: %s", info.message))
+      else
+         if info.files and type(info.files) == "table" then
+            for _, entry in pairs(info.files) do
+               gist_display_file(info.id, info.html_url, entry)
+            end
+         end
+      end
+   else
+      message("Gist error: Unable to parse response")
+   end
+end
+
+function gist_info_cb(short_name, url, status, response, err)
+   local buffer = g.buffers[short_name]
+   if buffer then
+      if status == 0 or status == w.WEECHAT_HOOK_PROCESS_RUNNING then
+         buffer.temp = buffer.temp .. response
+         if status == 0 then
+            gist_process_info(buffer, short_name)
+         end
+      elseif status >= 1 or status == w.WEECHAT_HOOK_PROCESS_ERROR then
+         if not err or err == "" then
+            err = "Unable to get info from " .. url
+         end
+         message(string.format("Error %d: %s", status, err))
+      end
+   end
+end
+
+function handler_gist(site, url)
+   local first, second = url:match("^https://gist%.github%.com/([^/]+)/?([^/]*)")
+   local gist_id
+   if second and second ~= "" then
+      gist_id = second
+   else
+      gist_id = first
    end
 
-   local buffer, short_name = create_buffer(site)
-   if buffer then
+   local short_name = "gist.github.com:" .. gist_id
+   if not g.buffers[short_name] then
+      local api_url = string.format("https://api.github.com/gists/%s", gist_id)
+      g.buffers[short_name] = { temp = "" }
+      g.buffers[short_name].hook = w.hook_process_hashtable(
+         "url:" .. api_url,
+         { useragent = g.useragent },
+         g.config.fetch_timeout,
+         "gist_info_cb",
+         short_name)
+   end
+end
+
+function handler_normal(site, url, lang)
+   local short_name = string.format("%s:%s", site.host, site.id)
+   if g.buffers[short_name] then
+      local pointer = g.buffers[short_name].pointer
+      if pointer then
+         w.buffer_set(pointer, "display", "1")
+      end
+   else
+      local buffer, short_name = create_buffer(site)
       if not buffer.hook then
          local raw_url = string.format(site.raw, site.id)
+         local title = string.format("%s: Fetching %s", g.script.name, site.url)
+
+         w.buffer_set(buffer.pointer, "title", title)
          w.buffer_set(buffer.pointer, "localvar_set_url", url)
          w.buffer_set(buffer.pointer, "localvar_set_host", site.host)
          w.buffer_set(buffer.pointer, "localvar_set_id", site.id)
@@ -581,9 +729,22 @@ function open_paste(url, lang)
          if lang and lang ~= "" then
             w.buffer_set(buffer.pointer, "localvar_set_lang", lang:lower())
          end
-
          request_raw_paste(raw_url, short_name)
       end
+   end
+end
+
+function open_paste(url, lang)
+   local site = get_site_config(url)
+   if not site then
+      message("Unsupported site: " .. url)
+      return w.WEECHAT_RC_OK
+   end
+
+   if site.handler and type(site.handler) == "function" then
+      site.handler(site, url, lang)
+   else
+      handler_normal(site, url, lang)
    end
    return w.WEECHAT_RC_OK
 end
@@ -607,12 +768,18 @@ function setup()
       g.script.description,
       "", "")
 
+   prepare_modules()
+   if json then
+      g.sites["gist.github.com"].handler = handler_gist
+   end
+
    load_config()
    w.hook_config("plugins.var.lua." .. g.script.name .. ".*", "config_cb", "")
    g.useragent = string.format("%s v%s", g.script.name, g.script.version)
 
    g.actions = {
-      lang = action_change_language
+      lang = action_change_language,
+      save = action_save
    }
 
    local sites = {}
