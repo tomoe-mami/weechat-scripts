@@ -5,6 +5,7 @@ View the content of pastebin inside buffer. Requires Weechat 0.4.3 or higher.
 Supported sites:
 
 - bpaste.net
+- codepad.org
 - dpaste.com
 - dpaste.de
 - fpaste.org
@@ -16,6 +17,7 @@ Supported sites:
 - pastebin.osuosl.org
 - pastie.org
 - sprunge.us
+- vpaste.net
 
 For gist with multiple files, only the first file in a gist will be fetch. To
 enable fetching multiple files, you have to install [lua-cjson][] module.
@@ -47,7 +49,7 @@ Save the content of current buffer to a file.
 
 ##### plugins.var.lua.pastebuf.fetch_timeout
 
-Timeout for fetching the paste URL in milliseconds (default: `12000`)
+Timeout for fetching the paste URL in milliseconds (default: `30000`)
 
 ##### plugins.var.lua.pastebuf.highlighter_timeout
 
@@ -56,15 +58,6 @@ Timeout for running syntax highlighter in milliseconds (default: `3000`)
 ##### plugins.var.lua.pastebuf.show_line_number
 
 Set to `1` to enable line number and `0` to disable it. (default: `1`)
-
-##### plugins.var.lua.pastebuf.indent_width
-
-Numbers of spaces used for indentation. All tab characters at the start of line
-will be replaced by these spaces. Set to `0` to disable tab replacement.
-(default: `4`)
-
-*Note:* In Weechat-devel (the next stable 0.4.3), you can use option
-`weechat.look.tab_width` to control the width of tabs.
 
 ##### plugins.var.lua.pastebuf.color_line_number
 
@@ -90,8 +83,8 @@ http://weechat.org/files/doc/devel/weechat_plugin_api.en.html#_weechat_color
 
 ### Known Issues
 
-Syntax language detection currently only works for gist and it requires
-lua-cjson module.
+Syntax language detection currently only works for gist and paste services
+using Sticky Notes (fpaste, pastebin.osuosl.org). It requires lua-cjson module.
 
 ### Nice to have
 

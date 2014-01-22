@@ -1098,17 +1098,6 @@ function buffer_close_cb(_, buffer)
    end
 end
 
-function buffer_switch_cb(_, signal, buffer)
-   local short_name = w.buffer_get_string(buffer, "short_name")
-   local flag
-   if not g.buffers[short_name] then
-      flag = false
-   else
-      flag = (localvar(buffer, "mode") == "normal")
-   end
-   return w.WEECHAT_RC_OK
-end
-
 function buffer_mod_cb(_, buffer, command)
    local short_name = w.buffer_get_string(buffer, "short_name")
    if g.buffers[short_name] then
