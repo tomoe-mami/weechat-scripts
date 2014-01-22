@@ -859,8 +859,13 @@ function run_external(index)
          if g.config.ignore_copied_url and not g.url.copied[u] then
             mark_url_as_copied(u)
          end
-         local command = string.format("%s %q", g.command.list[index], u)
-         weechat.hook_process(command, 0, "run_external_cb", "")
+         local cmd = g.command.list[index]
+         if cmd:sub(1, 2) == "#/" then
+            weechat.command(g.active_buffer or "", cmd:sub(2) .. " " .. u)
+         else
+            local command = string.format("%s %q", cmd, u)
+            weechat.hook_process(command, 0, "run_external_cb", "")
+         end
          return g.WEECHAT_RC_OK
       end
    end
