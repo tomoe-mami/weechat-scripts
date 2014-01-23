@@ -42,7 +42,7 @@ to detect the language of a paste.
 ##### Note about gist.github.com and Sticky Notes
 
 Gist and sites using Sticky Notes (fpaste.org, pastebin.osuosl.org) provide an
-API to get information about a paste. If ***lua-cjson** module is installed,
+API to get information about a paste. If **lua-cjson** module is installed,
 script will try to use the API to detect the language of a paste automatically
 or open all files inside a gist with multiple files.
 
@@ -52,7 +52,18 @@ The name of the language provided by paste services might be not supported by th
 syntax highlighter you use. When this happened, nothing will be shown in the
 paste buffer and there will be an error message in Weechat's core buffer. You
 can still view the content of the paste by entering `lang none` (or the correct
-name of language supported by your syntax highlighter).
+name of language supported by your syntax highlighter) inside the paste buffer.
+
+### Scan URLs
+
+You can can tell script to scan the current buffer for any URL from supported
+paste services and open them immediately. To do that just call:
+
+    /pastebuf **open-recent-url [<optional-number-of-urls>]
+
+If `optional-number-of-urls` isn't specified this will scan only 1 recent URL.
+If you tell it to scan more than 1 URL, the order of pastes opened might be not
+the same as the order of recent URLs appear inside current buffer.
 
 ### Command inside paste buffer
 
@@ -101,11 +112,6 @@ with `/pastebuf` command. Set to empty string to disable syntax highlighting.
 [color info]:
 http://weechat.org/files/doc/devel/weechat_plugin_api.en.html#_weechat_color
 
-
-### Known Issues
-
-Syntax language detection currently only works for gist and paste services
-using Sticky Notes (fpaste, pastebin.osuosl.org). It requires lua-cjson module.
 
 ### Nice to have
 
