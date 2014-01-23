@@ -544,6 +544,50 @@ function action_change_language(buffer, short_name, new_lang)
    end
 end
 
+function action_open_recent_url(current_buffer, limit)
+   local list = {}
+   limit = tonumber(limit)
+   if not limit or limit == 0 then
+      limit = 1
+   end
+
+   local buf_lines = w.infolist_get("buffer_lines", current_buffer, "")
+   if buf_lines and buf_lines ~= "" then
+
+      local url_matcher = "(https?://[%w:!/#_~@&=,;%+%?%[%]%.%%%-]+)"
+      local process_line = function ()
+         if w.infolist_integer(buf_lines, "displayed") ~= 1 then
+            return 0
+         end
+         local line = w.infolist_string(buf_lines, "message")
+         line = w.string_remove_color(line, "")
+         local url = line:match(url_matcher)
+         if not url then
+            return 0
+         end
+         local site = get_site_config(url)
+         if site then
+            if site.handler and type(site.handler) == "function" then
+               site.handler(site, url)
+            else
+               handler_normal(site, url)
+            end
+            return 1
+         end
+         return 0
+      end
+
+      w.infolist_prev(buf_lines)
+      local s = process_line()
+      local c = 1
+      while c < limit do
+         if w.infolist_prev(buf_lines) ~= 1 then break end
+         c = c + process_line()
+      end
+      w.infolist_free(buf_lines)
+   end
+end
+
 function create_buffer(site)
    local short_name
    if site.short_name then
@@ -905,6 +949,22 @@ function handler_gist(site, url)
    return w.WEECHAT_RC_OK
 end
 
+function detect_lang_from_query(url, host)
+   local pattern = "%?(.+)$"
+   if host == "sprunge.us" then
+      return url:match(pattern)
+   elseif host == "vpaste.net" then
+      local query = url:match(pattern)
+      if not query then return end
+
+      for var, value in query:gmatch("([^=]+)=([^&]+)") do
+         if var == "ft" then
+            return value
+         end
+      end
+   end
+end
+
 function handler_normal(site, url, lang)
    local short_name = string.format("%s:%s", site.host, site.id)
    if g.buffers[short_name] then
@@ -924,6 +984,9 @@ function handler_normal(site, url, lang)
          localvar(buffer.pointer, "host", site.host)
          localvar(buffer.pointer, "id", site.id)
 
+         if not lang or lang == "" then
+            lang = detect_lang_from_query(url, site.host)
+         end
          lang = get_lang(lang)
          if lang then
             localvar(buffer.pointer, "lang", lang)
@@ -1014,21 +1077,22 @@ function run_action(buf_ptr, action, param)
       return
    end
 
-   local short_name = w.buffer_get_string(buf_ptr, "short_name")
-   if not g.buffers[short_name] then
-      message("Special commands can only be called inside paste buffer")
-      return
+   if action == "open-recent-url" then
+      return g.actions[action](buf_ptr, param)
+   else
+      local short_name = w.buffer_get_string(buf_ptr, "short_name")
+      if not g.buffers[short_name] then
+         message("Special commands can only be called inside paste buffer")
+         return
+      end
+      return g.actions[action](g.buffers[short_name], short_name, param)
    end
-
-   return g.actions[action](g.buffers[short_name], short_name, param)
 end
 
 function command_cb(_, current_buffer, param)
    local first, second = param:match("^%s*(%S+)%s*(%S*)")
    if not first then
-      message(string.format(
-         "Usage: /%s <pastebin-url> [syntax-language]",
-         g.script.name))
+      w.command(current_buffer, "/help " .. g.script.name)
    else
       if first:sub(1, 2) == "**" then
          run_action(current_buffer, first:sub(3), second)
@@ -1143,6 +1207,7 @@ function setup()
    g.actions = {
       lang = action_change_language,
       save = action_save,
+      ["open-recent-url"] = action_open_recent_url,
       scroll = action_scroll
    }
 
@@ -1167,12 +1232,45 @@ function setup()
    w.hook_command_run("9001|/buffer set *", "buffer_mod_cb", "")
    w.hook_command(
       g.script.name,
-      "Open a buffer and view the content of a paste" .. supported_sites,
-      "paste-url [syntax-language]",
+      "View the content of a paste inside a buffer" .. supported_sites,
+      "<paste-url> [<syntax-language>] | **open-recent-url [<n>]",
+      string.format([[
+paste-url:              URL of the paste
+syntax-language:        Optional language for syntax highlighting
+%s**open-recent-url%s <n>:  Open <n> recent pastebin URLs that are mentioned
+                        inside current buffer. Default value for <n> is 1.
 
-      "paste-url:       URL of the paste\n" ..
-      "syntax-language: Optional language for syntax highlighting\n",
-      "",
+
+Inside a paste buffer you can use the following commands:
+
+%slang%s <syntax-language>
+
+   Change the active syntax language for current buffer.
+   Use %snone%s to set it to plain text.
+
+%ssave%s <filename>
+
+   Save the content of current buffer into a file.
+
+
+Keyboard shortcuts for navigating inside paste buffer:
+
+Alt+C                         Close current buffer
+Up, Down, Left, Right         Scroll buffer 1 line/char
+Ctrl+(Up/Down/Left/Right)     Scroll buffer 10 lines/chars
+Home                          Scroll to the start of buffer
+End                           Scroll to the end of buffer
+]],
+   w.color("bold"),
+   w.color("-bold"),
+   w.color("bold"),
+   w.color("-bold"),
+   w.color("bold"),
+   w.color("-bold"),
+   w.color("bold"),
+   w.color("-bold")),
+
+      "**open-recent-url",
       "command_cb",
       "")
 end

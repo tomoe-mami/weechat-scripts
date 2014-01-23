@@ -32,6 +32,27 @@ If the optional syntax language parameter is specified, the text will be
 highlighted using external command specified in
 `plugins.var.lua.pastebuf.syntax_highlighter` (see [**Options**](#options)).
 
+##### Note about sprunge.us and vpaste.net
+
+These services specify the language in the query part of their URL (eg:
+`http://sprunge.us/iFWA?lua`, `http://vpaste.net/TNSz8?ft=cpp`). If the third
+argument of `/pastebuf` is not specified, script will try to use this query info
+to detect the language of a paste.
+
+##### Note about gist.github.com and Sticky Notes
+
+Gist and sites using Sticky Notes (fpaste.org, pastebin.osuosl.org) provide an
+API to get information about a paste. If ***lua-cjson** module is installed,
+script will try to use the API to detect the language of a paste automatically
+or open all files inside a gist with multiple files.
+
+##### Note about language autodetection
+
+The name of the language provided by paste services might be not supported by the
+syntax highlighter you use. When this happened, nothing will be shown in the
+paste buffer and there will be an error message in Weechat's core buffer. You
+can still view the content of the paste by entering `lang none` (or the correct
+name of language supported by your syntax highlighter).
 
 ### Command inside paste buffer
 
