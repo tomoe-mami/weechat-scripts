@@ -578,13 +578,15 @@ function action_open_recent_url(current_buffer, limit)
       end
 
       w.infolist_prev(buf_lines)
-      local s = process_line()
-      local c = 1
+      local c = process_line()
       while c < limit do
          if w.infolist_prev(buf_lines) ~= 1 then break end
          c = c + process_line()
       end
       w.infolist_free(buf_lines)
+      if not c or c == 0 then
+         message("No URLs from supported paste services found")
+      end
    end
 end
 
