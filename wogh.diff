@@ -1,0 +1,54 @@
+diff --git a/pastebuf/pastebuf.lua b/pastebuf/pastebuf.lua
+index f43b921..7763530 100644
+--- a/pastebuf/pastebuf.lua
++++ b/pastebuf/pastebuf.lua
+@@ -3,7 +3,7 @@ local g = {
+    script = {
+       name = "pastebuf",
+       author = "tomoe-mami <https://github.com/tomoe-mami>",
+-      version = "0.1",
++      version = "0.2",
+       license = "WTFPL",
+       description = "View text from various pastebin sites inside a buffer.",
+       url = "https://github.com/tomoe-mami/weechat-scripts/tree/master/pastebuf"
+@@ -1048,14 +1048,31 @@ function handler_pastie(site, url, lang)
+    else
+       pastie_id = first
+    end
+-
+    site = {
+       url = url,
+       raw = site.raw,
+       host = "pastie.org",
+       id = pastie_id
+    }
++   return handler_normal(site, url, lang)
++end
+ 
++function handler_debian_paste(site, url, lang)
++   local first, second = url:match("^http://paste%.debian%.net/(%w+)/?(%w*)")
++   local id, plain
++   if first == "hidden" and second and second ~= "" then
++      id = second
++      plain = "plainh"
++   else
++      id = first
++      plain = "plain"
++   end
++   site = {
++      url = url,
++      raw = string.format("http://paste.debian.net/%s/%s", plain, id),
++      host = "paste.debian.net",
++      id = id
++   }
+    return handler_normal(site, url, lang)
+ end
+ 
+@@ -1200,6 +1217,7 @@ function setup()
+       end
+    end
+    g.sites["pastie.org"].handler = handler_pastie
++   g.sites["paste.debian.net"].handler = handler_debian_paste
+    g.useragent = string.format(
+       "%s v%s (%s)",
+       g.script.name,
