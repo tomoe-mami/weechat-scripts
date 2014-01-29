@@ -3,7 +3,7 @@ local g = {
    script = {
       name = "pastebuf",
       author = "tomoe-mami <https://github.com/tomoe-mami>",
-      version = "0.1",
+      version = "0.2",
       license = "WTFPL",
       description = "View text from various pastebin sites inside a buffer.",
       url = "https://github.com/tomoe-mami/weechat-scripts/tree/master/pastebuf"
@@ -41,6 +41,12 @@ local g = {
          description =
             "External command that will be used as syntax highlighter. " ..
             "$lang will be replaced by the name of syntax language"
+      },
+      shell = {
+         value = "/bin/sh",
+         type = "string",
+         description =
+            "Location of your shell or just the shell name if it's already in $PATH"
       },
       sticky_notes_retardness_level = {
          value = 1,
@@ -201,6 +207,10 @@ function convert_plugin_option_value(opt_type, opt_value)
 end
 
 function load_config()
+   local shell = os.getenv("SHELL")
+   if shell and shell ~= "" then
+      g.defaults.shell.value = shell
+   end
    for opt_name, info in pairs(g.defaults) do
       if w.config_is_set_plugin(opt_name) == 0 then
          local val
@@ -487,6 +497,46 @@ function action_scroll(buffer, short_name, param)
    end
 end
 
+function action_run(buffer, short_name, param)
+   if not g.config.shell or g.config.shell == "" then
+      message(
+         "Can not run command because the shell is empty. " ..
+         "Please specify your shell in plugins.var.lua.pastebuf.shell")
+      return
+   end
+   local cmd, opt = param, param:sub(1, 3)
+   local exec_options, exec_cb = {}, { ok = display_colors }
+   if opt== "-n " then
+      cmd = param:sub(4)
+   else
+      exec_options.stdin = 1
+   end
+   if cmd == "" then
+      message("Please specify an external command")
+      return
+   end
+
+   localvar(buffer.pointer, "temp", buffer.temp_name)
+   cmd = w.buffer_string_replace_local_var(buffer.pointer, cmd)
+   localvar(buffer.pointer, "temp", false)
+
+   if exec_options.stdin then
+      exec_cb.input = function (_, _, hook)
+         local fp = open_file(buffer.temp_name)
+         for line in fp:lines() do
+            w.hook_set(hook, "stdin", line .. "\n")
+         end
+         w.hook_set(hook, "stdin_close", "")
+         fp:close()
+      end
+   end
+   exec_generic(
+      short_name,
+      string.format("%s -c %q", g.config.shell, cmd),
+      exec_options,
+      exec_cb)
+end
+
 function action_save(buffer, short_name, filename)
    if not filename or filename == "" then
       message("You need to specify destination filename after `save`")
@@ -641,6 +691,20 @@ function display_plain(short_name, fp)
    end
 end
 
+function display_colors(buffer, short_name, data)
+   local y, num_col_width = 0
+   data = convert_csi_sgr(data)
+   if g.config.show_line_number then
+      local _, total_lines = string.gsub(data .. "\n", ".-\n[^\n]*", "")
+      num_col_width = #tostring(total_lines)
+   end
+   w.buffer_clear(buffer.pointer)
+   for line in data:gmatch("(.-)\n") do
+      print_line(buffer.pointer, y, num_col_width, line)
+      y = y + 1
+   end
+end
+
 function run_syntax_highlighter(short_name, fp)
    local buffer = g.buffers[short_name]
    local cmd = w.buffer_string_replace_local_var(
@@ -654,26 +718,12 @@ function run_syntax_highlighter(short_name, fp)
       w.hook_set(hook, "stdin_close", "")
    end
 
-   local complete_cb = function (_, _, data)
-      local y, num_col_width = 0
-      data = convert_csi_sgr(data)
-      if g.config.show_line_number then
-         local _, total_lines = string.gsub(data .. "\n", ".-\n[^\n]*", "")
-         num_col_width = #tostring(total_lines)
-      end
-      w.buffer_clear(buffer.pointer)
-      for line in data:gmatch("(.-)\n") do
-         print_line(buffer.pointer, y, num_col_width, line)
-         y = y + 1
-      end
-   end
-
    exec_generic(
       short_name,
       cmd,
       { stdin = 1 },
       {
-         ok = complete_cb,
+         ok = display_colors,
          input = input_cb
       });
 end
@@ -1048,18 +1098,36 @@ function handler_pastie(site, url, lang)
    else
       pastie_id = first
    end
-
    site = {
       url = url,
       raw = site.raw,
       host = "pastie.org",
       id = pastie_id
    }
+   return handler_normal(site, url, lang)
+end
 
+function handler_debian_paste(site, url, lang)
+   local first, second = url:match("^http://paste%.debian%.net/(%w+)/?(%w*)")
+   local id, plain
+   if first == "hidden" and second and second ~= "" then
+      id = second
+      plain = "plainh"
+   else
+      id = first
+      plain = "plain"
+   end
+   site = {
+      url = url,
+      raw = string.format("http://paste.debian.net/%s/%s", plain, id),
+      host = "paste.debian.net",
+      id = id
+   }
    return handler_normal(site, url, lang)
 end
 
 function open_paste(url, lang)
+   url = url:gsub("#.*$", "")
    local site = get_site_config(url)
    if not site then
       message("Unsupported site: " .. url)
@@ -1188,7 +1256,6 @@ function setup()
       message("This script requires Weechat v0.4.3 or newer")
       return
    end
-
    prepare_modules({ json = "cjson" })
    load_config()
 
@@ -1200,6 +1267,7 @@ function setup()
       end
    end
    g.sites["pastie.org"].handler = handler_pastie
+   g.sites["paste.debian.net"].handler = handler_debian_paste
    g.useragent = string.format(
       "%s v%s (%s)",
       g.script.name,
@@ -1210,7 +1278,8 @@ function setup()
       lang = action_change_language,
       save = action_save,
       ["open-recent-url"] = action_open_recent_url,
-      scroll = action_scroll
+      scroll = action_scroll,
+      run = action_run
    }
 
    local sites = {}
@@ -1254,6 +1323,16 @@ Inside a paste buffer you can use the following commands:
 
    Save the content of current buffer into a file.
 
+%srun%s [-n] <command>
+
+   Run a shell command and pipe the paste content to it.
+   Use %s-n%s if you don't want to pipe the paste.
+
+   Command might use special variable $lang for current syntax language
+   and $temp for location of temporary file for current buffer.
+
+   This will not modify the content of a paste, only what is displayed
+   on current buffer. Calling %slang%s will display the paste content again.
 
 Keyboard shortcuts for navigating inside paste buffer:
 
@@ -1263,14 +1342,13 @@ Ctrl+(Up/Down/Left/Right)     Scroll buffer 10 lines/chars
 Home                          Scroll to the start of buffer
 End                           Scroll to the end of buffer
 ]],
-   w.color("bold"),
-   w.color("-bold"),
-   w.color("bold"),
-   w.color("-bold"),
-   w.color("bold"),
-   w.color("-bold"),
-   w.color("bold"),
-   w.color("-bold")),
+   w.color("bold"), w.color("-bold"),
+   w.color("bold"), w.color("-bold"),
+   w.color("bold"), w.color("-bold"),
+   w.color("bold"), w.color("-bold"),
+   w.color("bold"), w.color("-bold"),
+   w.color("bold"), w.color("-bold"),
+   w.color("bold"), w.color("-bold")),
 
       "**open-recent-url",
       "command_cb",
