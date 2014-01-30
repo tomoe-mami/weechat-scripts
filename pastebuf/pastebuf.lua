@@ -92,6 +92,10 @@ local g = {
          pattern = "^http://paste%.debian%.net/(%w+)",
          raw = "http://paste.debian.net/plain/%s"
       },
+      ["paste.ee"] = {
+         pattern = "^http://paste%.ee/p/(%w+)",
+         raw = "http://paste.ee/r/%s"
+      },
       ["pastebin.ca"] = {
          pattern = "^http://pastebin%.ca/(%w+)",
          raw = "http://pastebin.ca/raw/%s"
