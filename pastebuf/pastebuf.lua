@@ -264,6 +264,10 @@ function convert_csi_sgr(text)
          chunk = tonumber(chunk)
          if chunk == 0 then
             attr = ""
+            local c2 = shift_param(code)
+            if not c2 or c2 == "" then
+               fg, bg = "", ""
+            end
          elseif g.sgr.attributes[chunk] then
             attr = g.sgr.attributes[chunk]
          elseif chunk >= 30 and chunk <= 37 then
@@ -1164,14 +1168,14 @@ function run_action(buf_ptr, action, param)
 end
 
 function command_cb(_, current_buffer, param)
-   local first, second = param:match("^%s*(%S+)%s*(%S*)")
+   local first, second = param:match("^%s*(%S+)%s*(.*)")
    if not first then
       w.command(current_buffer, "/help " .. g.script.name)
    else
       if first:sub(1, 2) == "**" then
          run_action(current_buffer, first:sub(3), second)
       else
-         open_paste(first, second)
+         open_paste(first, second:match("^(%S+)"))
       end
    end
    return w.WEECHAT_RC_OK
