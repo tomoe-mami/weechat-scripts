@@ -135,8 +135,6 @@ local g = {
          ["meta-c"]     = "/buffer close",               -- alt+c
       }
    },
-   -- NOTE: keep this true until it is clear what caused the stderr output of one process
-   -- is included in other process
    hide_stderr = true,
    buffers = {},
    actions = {},
@@ -1264,6 +1262,10 @@ function setup()
       message("This script requires Weechat v0.4.3 or newer")
       return
    end
+   if weechat_version >= 0x00040400 then
+      g.hide_stderr = false
+   end
+
    prepare_modules({ json = "cjson" })
    load_config()
 
