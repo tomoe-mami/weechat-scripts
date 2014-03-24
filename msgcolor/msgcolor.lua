@@ -7,10 +7,15 @@ local g = {
       license = "WTFPL",
       description = "Colors"
    },
-   config = {
-      color_list = { 1, 2, 3, 4, 5, 6, 7 }
+   defaults = {
+      colors = {
+         type = "list",
+         description = "",
+         value = { 1, 2, 3, 4, 5, 6, 7 }
+      }
    },
-   color_index = 1
+   config = {},
+   pool = {}
 }
 
 function setup()
@@ -24,56 +29,88 @@ function setup()
 
    math.randomseed(os.time())
 
-   load_config()
-   setup_already_opened_buffers()
+   init_config()
+   assign_colors_to_opened_buffers()
+   setup_hooks()
+end
 
+function setup_hooks()
    w.hook_config("plugins.var.lua." .. g.script.name .. ".*", "config_cb", "")
-   w.hook_signal("irc_channel_opened", "buffer_cb", "")
-   w.hook_signal("irc_pv_opened", "buffer_cb", "")
+   w.hook_signal("irc_channel_opened", "buffer_open_cb", "")
+   w.hook_signal("irc_pv_opened", "buffer_open_cb", "")
+   w.hook_signal("buffer_closing", "buffer_close_cb", "")
    w.hook_modifier("weechat_print", "print_cb", "")
 end
 
-function load_config()
-   if w.config_is_set_plugin("colors") ~= 1 then
-      w.config_set_plugin("colors", table.concat(g.color_list, ","))
-      w.config_set_desc_plugin("colors", "Color list for marker")
-   else
-      local opt_value = w.config_get_plugin("colors")
-      if opt_value and opt_value ~= "" then
-         set_color_list(opt_value)
+function get_or_set_option(name, info, value)
+   if not value then
+      if w.config_is_set_plugin(name) ~= 1 then
+         if info.type == "list" then
+            value = table.concat(info.value, " ")
+         else
+            value = info.value
+         end
+         w.config_set_plugin(name, value)
+         if info.description then
+            w.config_set_desc_plugin(name, info.description)
+         end
+      else
+         value = w.config_get_plugin(name)
       end
    end
-end
-
-function set_color_list(colors)
-   local list = {}
-   for color in colors:gmatch("([^,]+)") do
-      table.insert(list, color)
+   if info.type == "list" then
+      local list = {}
+      for item in value:gmatch("([^%s]+)") do
+         table.insert(list, item)
+      end
+      value = list
    end
-   g.color_list = list
+   return value
 end
 
-function next_color()
-   local current = g.color_index
-   if g.color_index == #g.color_list then
-      g.color_index = 1
-   else
-      g.color_index = g.color_index + 1
+function init_config()
+   for name, info in pairs(g.defaults) do
+      g.config[name] = get_or_set_option(name, info)
    end
-   return g.color_list[current]
+   if not g.config.colors or #g.config.colors == 0 then
+      g.config.colors = g.defaults.colors.value
+   end
 end
 
-function setup_already_opened_buffers()
+function refill_pool()
+   local pool = {}
+   for _, v in ipairs(g.config.colors) do
+      table.insert(pool, v)
+   end
+   g.pool = pool
+end
+
+function get_color()
+   if #g.pool == 0 then
+      refill_pool()
+   end
+   local index = math.random(1, #g.pool)
+   local color = g.pool[index]
+   local temp = {}
+   for _, v in ipairs(g.pool) do
+      if v ~= color then
+         table.insert(temp, v)
+      end
+   end
+   g.pool = temp
+   return color
+end
+
+function assign_colors_to_opened_buffers()
    local buf_list = w.infolist_get("buffer", "", "")
    if buf_list and buf_list ~= "" then
-      g.color_index = math.random(1, #g.color_list)
       while w.infolist_next(buf_list) == 1 do
          local buffer = w.infolist_pointer(buf_list, "pointer")
          if buffer and buffer ~= "" then
             local p = w.buffer_get_string(buffer, "plugin")
             local t = w.buffer_get_string(buffer, "localvar_type")
             if p == "irc" and (t == "channel" or t == "private") then
-               w.buffer_set(buffer, "localvar_set_color", next_color())
+               w.buffer_set(buffer, "localvar_set_color", get_color())
             end
          end
       end
@@ -83,17 +120,32 @@ end
 function config_cb(_, option, value)
    local prefix = "plugins.var.lua." .. g.script.name .. "."
    local name = option:match("^plugins%.var%.lua%." .. g.script.name .. "%.(.+)$")
-   if name then
+   if name and g.defaults[name] then
+      g.config[name] = get_or_set_option(name, g.defaults[name], value)
       if name == "colors" then
-         set_color_list(value)
-         setup_already_opened_buffers()
+         refill_pool()
+         assign_colors_to_opened_buffers()
       end
    end
    return w.WEECHAT_RC_OK
 end
 
-function buffer_cb(_, signal, buffer)
-   w.buffer_set(buffer, "localvar_set_color", next_color())
+function buffer_open_cb(_, signal, buffer)
+   w.buffer_set(buffer, "localvar_set_color", get_color())
+   return w.WEECHAT_RC_OK
+end
+
+function buffer_close_cb(_, signal, buffer)
+   local color = w.buffer_get_string(buffer, "localvar_color")
+   if not color or color == "" then
+      return w.WEECHAT_RC_OK
+   end
+   for _, v in ipairs(g.pool) do
+      if v == color then
+         return w.WEECHAT_RC_OK
+      end
+   end
+   table.insert(g.pool, color)
    return w.WEECHAT_RC_OK
 end
 
