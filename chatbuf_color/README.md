@@ -11,7 +11,7 @@ Options
 ##### plugins.var.lua.chatbuf_color.colors
 
 List of space separated colors. See plugin API documentation for
-[`weechat_color`][] for color syntax. (default: `1 2 3 4 5 6 7`)
+[`weechat_color`][weechat_color] for color syntax. (default: `1 2 3 4 5 6 7`)
 
 ##### plugins.var.lua.chatbuf_color.reshuffle_on_load
 
