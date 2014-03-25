@@ -1,7 +1,7 @@
 local w = weechat
 local g = {
    script = {
-      name = "msgcolor",
+      name = "bufcolor",
       author = "tomoe-mami <https://github.com/tomoe-mami",
       version = "0.1",
       license = "WTFPL",
