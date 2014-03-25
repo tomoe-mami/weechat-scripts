@@ -76,7 +76,7 @@ function message(s)
    w.print("", g.script.name .. "\t" .. s)
 end
 
-function command_cb(_, current_buffer, param)
+function command_cb(_, buffer, param)
    if not param or param == "" then
       param = "shuffle"
    end
@@ -87,9 +87,9 @@ function command_cb(_, current_buffer, param)
    elseif action == "shuffle" then
       return action_shuffle_colors()
    elseif action == "set" then
-      return action_set_custom_color(args)
+      return action_set_custom_color(buffer, args)
    elseif action == "unset" then
-      return action_unset_custom_color(args)
+      return action_unset_custom_color(buffer, args)
    end
 end
 
@@ -99,14 +99,14 @@ function action_shuffle_colors()
    return w.WEECHAT_RC_OK
 end
 
-function action_set_custom_color(args)
+function action_set_custom_color(buffer, args)
    local color, buffer_list = args:match("^([^%s]+)%s*(.*)")
    if not color then
       message("Action `set` requires a color parameter")
       return w.WEECHAT_RC_ERROR
    end
    if not buffer_list or buffer_list == "" then
-      buffer_list = w.buffer_get_string(w.current_buffer(), "name")
+      buffer_list = w.buffer_get_string(buffer, "name")
    end
    for name in buffer_list:gmatch("([^%s]+)") do
       w.config_set_plugin("custom." .. name, color)
@@ -118,9 +118,9 @@ function action_set_custom_color(args)
    return w.WEECHAT_RC_OK
 end
 
-function action_unset_custom_color(args)
+function action_unset_custom_color(buffer, args)
    if not args or args == "" then
-      args = w.buffer_get_string(w.current_buffer(), "name")
+      args = w.buffer_get_string(buffer, "name")
    end
    for name in args:gmatch("([^%s]+)") do
       local opt_name = "custom." .. name
