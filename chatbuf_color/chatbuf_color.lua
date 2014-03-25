@@ -1,18 +1,23 @@
 local w = weechat
 local g = {
    script = {
-      name = "bufcolor",
+      name = "chatbuf_color",
       author = "tomoe-mami <https://github.com/tomoe-mami",
       version = "0.1",
       license = "WTFPL",
-      description = "Colorize lines from the same buffer."
+      description = "Colorize messages in chat buffer"
    },
    defaults = {
       colors = {
          type = "list",
          description = "List of space separated colors that will be used to " ..
-                       "colorize buffer lines",
+                       "colorize messages",
          value = { 1, 2, 3, 4, 5, 6, 7 }
+      },
+      reshuffle_on_load = {
+         type = "boolean",
+         description = "Reshuffle all assigned colors when the script is loaded",
+         value = true
       }
    },
    config = {},
@@ -31,7 +36,7 @@ function setup()
    math.randomseed(os.time())
 
    init_config()
-   assign_colors_to_opened_buffers()
+   assign_colors_to_opened_buffers(g.config.reshuffle_on_load)
    setup_hooks()
 end
 
@@ -43,10 +48,12 @@ function setup_hooks()
    w.hook_modifier("weechat_print", "print_cb", "")
    w.hook_command(
       g.script.name,
-      "",
+      g.script.description,
+
       "shuffle|set <color> [<buffers>]|unset [<buffers>]",
+
 [[
-   shuffle: Shuffle the colors assigned for opened channel/pv buffers.
+   shuffle: Shuffle the colors assigned for opened chat buffers.
        set: Set custom color. If no buffer specified, this will set color for
             current buffer.
      unset: Unset custom color for buffers (or just the current one if no
@@ -54,18 +61,18 @@ function setup_hooks()
 
    <color>: Color code. See Plugin API documentation for weechat_color
             for the correct syntax.
- <buffers>: Space separated list of channel/pv buffers.
+ <buffers>: Space separated list of chat buffers. The format of each entry
+            is <server-name>.<channel-or-nickname>
+]],
 
-The list of default colors are stored in option plugins.var.lua.]] ..
-      g.script.name .. ".colors",
       "shuffle || " ..
-      "set %- %(buffers_names)|| " ..
-      "unset %(buffers_names)",
+      "set %- %(buffers_names)|%* || " ..
+      "unset %(buffers_names)|%*",
       "command_cb",
       "")
 end
 
-function message()
+function message(s)
    w.print("", g.script.name .. "\t" .. s)
 end
 
@@ -133,6 +140,8 @@ function get_or_set_option(name, info, value)
       if w.config_is_set_plugin(name) ~= 1 then
          if info.type == "list" then
             value = table.concat(info.value, " ")
+         elseif info.type == "boolean" then
+            value = info.value and 1 or 0
          else
             value = info.value
          end
@@ -150,6 +159,9 @@ function get_or_set_option(name, info, value)
          table.insert(list, item)
       end
       value = list
+   elseif info.type == "boolean" then
+      value = tonumber(value)
+      value = value and value ~= 0
    end
    return value
 end
@@ -200,20 +212,27 @@ function get_color(buffer)
    end
 end
 
+function is_chat_buffer(buffer)
+   if not buffer or buffer == "" then
+      return false
+   else
+      local p = w.buffer_get_string(buffer, "plugin")
+      local t = w.buffer_get_string(buffer, "localvar_type")
+      return p == "irc" and (t == "channel" or t == "private")
+   end
+end
+
 function assign_colors_to_opened_buffers(reassign)
    local buf_list = w.infolist_get("buffer", "", "")
-   if buf_list and buf_list ~= "" then
-      while w.infolist_next(buf_list) == 1 do
-         local buffer = w.infolist_pointer(buf_list, "pointer")
-         if buffer and buffer ~= "" then
-            local p = w.buffer_get_string(buffer, "plugin")
-            local t = w.buffer_get_string(buffer, "localvar_type")
-            if p == "irc" and (t == "channel" or t == "private") then
-               local c = w.buffer_get_string(buffer, "localvar_color")
-               if not c or c == "" or reassign then
-                  w.buffer_set(buffer, "localvar_set_color", get_color(buffer))
-               end
-            end
+   if not buf_list or buf_list == "" then
+      return
+   end
+   while w.infolist_next(buf_list) == 1 do
+      local buffer = w.infolist_pointer(buf_list, "pointer")
+      if is_chat_buffer(buffer) then
+         local color = w.buffer_get_string(buffer, "localvar_color")
+         if not color or color == "" or reassign then
+            w.buffer_set(buffer, "localvar_set_color", get_color(buffer))
          end
       end
    end
@@ -225,8 +244,7 @@ function config_cb(_, option, value)
    if name and g.defaults[name] then
       g.config[name] = get_or_set_option(name, g.defaults[name], value)
       if name == "colors" then
-         refill_pool()
-         assign_colors_to_opened_buffers()
+         action_shuffle_colors()
       end
    end
    return w.WEECHAT_RC_OK
