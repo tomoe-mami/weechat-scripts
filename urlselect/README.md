@@ -1,77 +1,111 @@
 urlselect
 ========
 
-![screenshot][]
+A bar for selecting URLs from current buffer. Requires Weechat 0.4.4 or higher.
 
-This script will collect URL in a buffer and then present you with a prompt
-to select the URL (with Up/Down arrow key) starting from the most recent one.
-Once you pressed Enter, the selected URL will be put into the clipboard or
-[tmux][] buffer (depends on the active mode). Pressing Ctrl-C will cancel the
-URL selection.
 
-Other than copying URL, you can also bind external command to keys `0`-`9` (see
-**Options** below). The command will be executed when you press the key during
-URL selection.
 
-To make it easier, you might want to bind a key to start URL selection. For
-example, to use Alt-Enter you run the following command in your Weechat:
+### Usage
 
-    /key bind meta-ctrl-M /urlselect
+Simply run `/urlselect` to activate URL selection bar. You can use
+Up/Down/Home/End to navigate. Press ? to see the list of key bindings and Tab to
+see list of available custom commands (see **Custom Commands** below).
 
-[screenshot]: http://i.imgur.com/GkhibXW.png
 
-Options
--------
 
-- **plugins.var.lua.urlselect.selection** (default: **primary**)
+### Custom Commands
 
-  Default selection mode to use. Valid values are **primary**, **secondary**,
-  **clipboard** and **tmux**.
+You can bind a single digit (0-9) or lowercase alphabet (a-z) to a custom
+Weechat command. The syntax to bind a key is:
 
-- **plugins.var.lua.urlselect.ignore_copied_url** (default: **yes**)
+    /urlselect bind <key> <command>
 
-  If set to **yes**, URL that has been copied into the clipboard will be
-  ignored the next time you call `/urlselect` again.
+and to unbind:
 
-- **plugins.var.lua.urlselect.noisy** (default: **no**)
+    /urlselect unbind <key>
 
-  If set to **yes**, the script will print the URL into the core buffer
-  everytime you stored one into the clipboard (ah, you know... for science!)
+Two custom commands are already set by default (1 and 2). You can unbind these
+keys or set it into something else with the above commands.
 
-- **plugins.var.lua.urlselect.ext_cmd_?** (default: none)
+To see a list of available custom commands, you can press Tab while the URL
+selection bar is active. You can also use `/urlselect list-commands` anywhere
+else on Weechat.
 
-  This option can be used to bind an external command to key 0-9 (replace the
-  **?** on the option name with the key you want to bind). The selected URL will
-  be appended to the command before executing it.
 
-  Key `1` is bound to `xdg-open` by default.
 
-- **plugins.var.lua.urlselect.show_nickname** (default: **no**)
+### Bar & Bar Items
 
-  Show the nickname of user who sent the URL.
+This script will create 1 bar and 8 bar items. The bar is called `urlselect`
+and its settings are available under `weechat.bar.urlselect.*`.
 
-- **plugins.var.lua.urlselect.default_color** (default: **gray**)
+The list of bar items are:
 
-  Colors for default text.
+- **urlselect_index**: Index of URL count from the newest line (bottom) of
+  current buffer.
 
-- **plugins.var.lua.urlselect.mode_color** (default: **yellow**)
+- **urlselect_nick**: The nickname who mentioned the URL. If no nickname
+  available, this will contain an asterisk.
 
-  Colors for active mode.
+- **urlselect_time**: The time of message containing the URL.
 
-- **plugins.var.lua.urlselect.key_color** (default: **yellow**)
+- **urlselect_url**: The actual URL portion of message.
 
-  Colors for shortcut key.
+- **urlselect_message**: Message with its original colors (if there's any)
+  stripped and the URL portion highlighted.
 
-- **plugins.var.lua.urlselect.index_color** (default: **yellow**)
+- **urlselect_title**: Bar title. The one that says, `urlselect: Press ? for help`.
 
-  Colors for URL index.
+- **urlselect_help**: Help text for showing keys and list of custom commands.
 
-- **plugins.var.lua.urlselect.url_color** (default: **lightblue**)
+- **urlselect_status**: Status notification. Active when certain activity occur.
+  For example, running a custom command.
 
-  Colors for selected URL.
 
-- **plugins.var.lua.urlselect.nickname_color** (default: none)
 
-  Colors for nickname. If set to empty string, will use nick color assigned by
-  Weechat.
+### Options
 
+##### plugins.var.lua.status_timeout
+
+Timeout (in milliseconds) for displaying status notification (default: `1300`).
+
+##### plugins.var.lua.url_color
+
+Color for URL item (default: `_lightblue`).
+
+##### plugins.var.lua.nick_color
+
+Color for nickname item. Leave this empty to use Weechat's nick color (default
+is empty).
+
+##### plugins.var.lua.index_color
+
+Color for URL index (default: `brown`).
+
+##### plugins.var.lua.message_color
+
+Color for message containing the URL (default: `default`).
+
+##### plugins.var.lua.time_color
+
+Color for time of message (default: `default`).
+
+##### plugins.var.lua.title_color
+
+Color for bar title (default: `default`).
+
+##### plugins.var.lua.key_color
+
+Color for keys (default: `cyan`).
+
+##### plugins.var.lua.help_color
+
+Color for help text (default: `default`)
+
+##### plugins.var.lua.status_color
+
+Color for status notification (default: `black,green`)
+
+##### plugins.var.lua.urlselect.cmd.*
+
+These are for custom commands. Use `/urlselect bind` and `/urlselect unbind` to
+modify these options.
