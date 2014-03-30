@@ -1,8 +1,9 @@
 urlselect
-========
+=================================================================================
 
 A bar for selecting URLs from current buffer. Requires Weechat 0.4.4 or higher.
 
+![screenshot](http://i.imgur.com/d5NFVnO.png "urlselect bar at the top of weechat")
 
 
 ### Usage
@@ -15,12 +16,23 @@ see list of available custom commands (see **Custom Commands** below).
 
 ### Custom Commands
 
-You can bind a single digit (0-9) or lowercase alphabet (a-z) to a custom
-Weechat command. The syntax to bind a key is:
+You can bind a single key digit (0-9) or lowercase alphabet (a-z) to a custom
+Weechat command. When the selection bar is active, you can run these commands
+by pressing Alt followed by the key. The syntax to bind a key is:
 
     /urlselect bind <key> <command>
 
-and to unbind:
+You can use the following variables inside a command: `${url}`, `${time}`,
+`${index}`, `${nick}`, and `${message}`. They will be replaced by their actual
+values from the currently selected URL.
+
+For example, to bind Alt-3 to view the raw content of a URL inside Weechat you
+can use:
+
+    /urlselect bind 3 /exec -noln -nf url:${url}
+
+
+To remove a custom command, simply unbind its key:
 
     /urlselect unbind <key>
 
@@ -40,7 +52,7 @@ and its settings are available under `weechat.bar.urlselect.*`.
 
 The list of bar items are:
 
-- **urlselect_index**: Index of URL count from the newest line (bottom) of
+- **urlselect_index**: Index of URL counted from the newest line (bottom) of
   current buffer.
 
 - **urlselect_nick**: The nickname who mentioned the URL. If no nickname
@@ -64,44 +76,44 @@ The list of bar items are:
 
 ### Options
 
-##### plugins.var.lua.status_timeout
+##### plugins.var.lua.urlselect.status_timeout
 
 Timeout (in milliseconds) for displaying status notification (default: `1300`).
 
-##### plugins.var.lua.url_color
+##### plugins.var.lua.urlselect.url_color
 
 Color for URL item (default: `_lightblue`).
 
-##### plugins.var.lua.nick_color
+##### plugins.var.lua.urlselect.nick_color
 
 Color for nickname item. Leave this empty to use Weechat's nick color (default
 is empty).
 
-##### plugins.var.lua.index_color
+##### plugins.var.lua.urlselect.index_color
 
 Color for URL index (default: `brown`).
 
-##### plugins.var.lua.message_color
+##### plugins.var.lua.urlselect.message_color
 
 Color for message containing the URL (default: `default`).
 
-##### plugins.var.lua.time_color
+##### plugins.var.lua.urlselect.time_color
 
 Color for time of message (default: `default`).
 
-##### plugins.var.lua.title_color
+##### plugins.var.lua.urlselect.title_color
 
 Color for bar title (default: `default`).
 
-##### plugins.var.lua.key_color
+##### plugins.var.lua.urlselect.key_color
 
 Color for keys (default: `cyan`).
 
-##### plugins.var.lua.help_color
+##### plugins.var.lua.urlselect.help_color
 
 Color for help text (default: `default`)
 
-##### plugins.var.lua.status_color
+##### plugins.var.lua.urlselect.status_color
 
 Color for status notification (default: `black,green`)
 

@@ -70,12 +70,13 @@ local g = {
    custom_commands = {},
    hooks = {},
    current_status = "",
-   enable_help = 0
+   enable_help = 0,
+   last_index = 0
 }
 
 g.keys = {
-   ["meta2-A"]       = "navigate next",
-   ["meta2-B"]       = "navigate previous",
+   ["meta2-B"]       = "navigate next",
+   ["meta2-A"]       = "navigate previous",
    ["meta2-1~"]      = "navigate last",
    ["meta2-4~"]      = "navigate first",
    ["ctrl-P"]        = "navigate previous-highlight",
@@ -167,11 +168,12 @@ function set_custom_command(key, cmd, silent)
       end
       return false
    else
+      local key_code = "meta-" .. key
       if not cmd or cmd == "" then
-         if g.keys[key] then g.keys[key] = nil end
+         if g.keys[key_code] then g.keys[key_code] = nil end
          if g.custom_commands[key] then g.custom_commands[key] = nil end
       else
-         g.keys[key] = "run " .. key
+         g.keys[key_code] = "run " .. key
          g.custom_commands[key] = cmd
 
          if not silent then
@@ -223,15 +225,15 @@ manually:
 
 KEY BINDINGS
 --------------------------------------------------------------
-     Ctrl-C: Close/deactivate URL selection bar.
-         Up: Move to previous (older) URL.
-       Down: Move to next (newer) URL.
-       Home: Move to oldest URL.
-        End: Move to newest URL.
-     Ctrl-P: Move to previous URL that contains highlight.
-     Ctrl-N: Move to next URL that contains highlight.
-      Enter: Insert URL into buffer input.
- 0-9 or a-z: Run custom command.
+       Ctrl-C: Close/deactivate URL selection bar.
+           Up: Move to previous (older) URL.
+         Down: Move to next (newer) URL.
+         Home: Move to oldest URL.
+          End: Move to newest URL.
+       Ctrl-P: Move to previous URL that contains highlight.
+       Ctrl-N: Move to next URL that contains highlight.
+        Enter: Insert URL into buffer input.
+ Alt-[0-9a-z]: Run custom command.
 
 ]],
       "activate || bind || unbind || list-commands || deactivate || run || " ..
@@ -266,6 +268,32 @@ function set_bar(flag)
    end
 end
 
+function extract_nick_from_tags(tags)
+   tags = "," .. tags .. ","
+   local nick = tags:match(",nick_([^,]+),")
+   return nick, tags
+end
+
+function new_line_cb(_, buffer, date, tags, displayed, highlighted, prefix, message)
+   if displayed == "1" and g.list and g.list ~= "" then
+      local data = {}
+      data.nick = extract_nick_from_tags(tags)
+      data.message = message
+      data.time = os.date("%Y-%m-%d %H:%M:%S", date)
+      data.highlighted = tonumber(highlighted)
+
+      process_urls_in_message(data.message, function (url, msg)
+         data.message = msg
+         data.index = g.last_index + 1
+         g.last_index = data.index
+         data.url = url
+         create_new_url_entry(g.list, data)
+         set_status("New URL added at index " .. data.index)
+      end)
+   end
+   return w.WEECHAT_RC_OK
+end
+
 function cmd_action_activate(buffer, args)
    if not g.active then
       g.list = collect_urls(buffer)
@@ -274,17 +302,25 @@ function cmd_action_activate(buffer, args)
             "buffer_switch",
             "buffer_deactivated_cb",
             buffer)
+
          g.hooks.close = w.hook_signal(
             "buffer_closing",
             "buffer_deactivated_cb",
             buffer)
 
+         g.hooks.print = w.hook_print(
+            buffer,
+            "", "://", 1,
+            "new_line_cb", "")
+
          g.active = true
          set_bar(true)
-         cmd_action_navigate(buffer, "next")
+         cmd_action_navigate(buffer, "previous")
          set_keys(buffer, true)
          w.bar_item_update(g.script.name .. "_title")
       end
+   else
+      cmd_action_deactivate(buffer, "")
    end
    return w.WEECHAT_RC_OK
 end
@@ -294,6 +330,7 @@ function cmd_action_deactivate(buffer)
       g.active = false
       set_bar(false)
       set_keys(buffer, false)
+      g.last_index = 0
       if g.list and g.list ~= "" then
          w.infolist_free(g.list)
          g.list = nil
@@ -308,9 +345,9 @@ end
 
 function move_cursor_normal(list, dir)
    local func
-   if dir == "next" or dir == "first" then
+   if dir == "next" or dir == "last" then
       func = w.infolist_next
-   elseif dir == "previous" or dir == "last" then
+   elseif dir == "previous" or dir == "first" then
       func = w.infolist_prev
    end
    if dir == "first" or dir == "last" then
@@ -327,23 +364,23 @@ end
 function move_cursor_highlight(list, dir)
    local func, alt
    if dir == "next-highlight" then
-      func = w.infolist_prev
-      alt = w.infolist_next
-   elseif dir == "previous-highlight" then
       func = w.infolist_next
       alt = w.infolist_prev
+   elseif dir == "previous-highlight" then
+      func = w.infolist_prev
+      alt = w.infolist_next
    else
       return false
    end
 
-   local index = w.infolist_string(list, "index")
+   local index = w.infolist_integer(list, "index")
    while func(list) == 1 do
       if w.infolist_integer(list, "highlighted") == 1 then
          return true
       end
    end
    while alt(list) == 1 do
-      if w.infolist_string(list, "index") == index then
+      if w.infolist_integer(list, "index") == index then
          break
       end
    end
@@ -384,7 +421,7 @@ function eval_current_entry(text)
       nick = w.infolist_string(g.list, "nick"),
       time = w.infolist_string(g.list, "time"),
       message = w.infolist_string(g.list, "message"),
-      index = w.infolist_string(g.list, "index")
+      index = w.infolist_integer(g.list, "index")
    }
    return w.string_eval_expression(text, {}, param, {})
 end
@@ -403,7 +440,7 @@ end
 function cmd_action_list_commands(buffer, args)
    print("KEYS    COMMANDS")
    print("===============================================")
-   local fmt, opt = "%-8s %s", { no_eval = true }
+   local fmt, opt = "Alt-%s    %s", { no_eval = true }
    for k = 0, 9 do
       local c = tostring(k)
       if g.custom_commands[c] then
@@ -461,76 +498,85 @@ function command_cb(_, buffer, param)
    end
 end
 
-function collect_urls(buffer)
-   local index, list = 0
-   local function add(source, url, msg)
-      if not list then
-         list = w.infolist_new()
-         if not list or list == "" then
-            return false
-         end
-      end
-
-      index = index + 1
-
-      local s = "," .. w.infolist_string(source, "tags") .. ","
-      local nick = s:match(",nick_([^,]+),")
-      local time = w.infolist_string(source, "str_time")
-      local highlighted = w.infolist_integer(source, "highlight")
-      time = w.string_remove_color(time, "")
-
-      local item = w.infolist_new_item(list)
-      w.infolist_new_var_string(item, "message", msg)
-      w.infolist_new_var_string(item, "nick", nick or "")
-      w.infolist_new_var_string(item, "time", time)
-      w.infolist_new_var_string(item, "url", url)
-      w.infolist_new_var_string(item, "index", index)
-      w.infolist_new_var_integer(item, "highlighted", highlighted)
-      return true
-   end
-
-   local function process(source)
-      if w.infolist_integer(source, "displayed") ~= 1 then
-         return
-      end
-
-      local pattern = "(%a[%w%+%.%-]+://[%w:!/#_~@&=,;%+%?%[%]%.%%%-]+)"
-      local msg = w.infolist_string(source, "message")
-      msg = w.string_remove_color(msg, "")
-
-      local x1, x2 = 1, 0
-      while x1 and x2 do
-         x1, x2, url = msg:find(pattern, x2 + 1)
-         if x1 and x2 and url then
-            local msg2
-            if g.config.url_color then
-               local left, right = "", ""
-               if x1 > 1 then
-                  left = msg:sub(1, x1 - 1)
-               end
-               if x2 < #msg then
-                  right = msg:sub(x2 + 1)
-               end
-               msg2 =
-                  left ..
-                  w.color(g.config.url_color) ..
-                  url ..
-                  w.color("reset") ..
-                  right
+function process_urls_in_message(msg, callback)
+   local pattern = "(%a[%w%+%.%-]+://[%w:!/#_~@&=,;%+%?%[%]%.%%%-]+)"
+   msg = w.string_remove_color(msg, "")
+   local x1, x2, count = 1, 0, 0
+   while x1 and x2 do
+      x1, x2, url = msg:find(pattern, x2 + 1)
+      if x1 and x2 and url then
+         count = count + 1
+         local msg2
+         if g.config.url_color then
+            local left, right = "", ""
+            if x1 > 1 then
+               left = msg:sub(1, x1 - 1)
             end
-            add(source, url, msg2)
+            if x2 < #msg then
+               right = msg:sub(x2 + 1)
+            end
+            msg2 =
+               left ..
+               w.color(g.config.url_color) ..
+               url ..
+               w.color("reset") ..
+               right
          end
+         callback(url, msg2)
       end
    end
+   return count
+end
 
+function create_new_url_entry(list, data)
+   local item = w.infolist_new_item(list)
+   w.infolist_new_var_string(item, "message", data.message or "")
+   w.infolist_new_var_string(item, "nick", data.nick or "")
+   w.infolist_new_var_string(item, "time", data.time or "")
+   w.infolist_new_var_string(item, "url", data.url or "")
+   w.infolist_new_var_integer(item, "index", data.index or 0)
+   w.infolist_new_var_integer(item, "highlighted", data.highlighted or 0)
+   return item
+end
+
+function get_data_from_buf_line(list_ptr)
+   local data = {}
+   data.nick = extract_nick_from_tags(w.infolist_string(list_ptr, "tags"))
+   data.highlighted = w.infolist_integer(list_ptr, "highlight")
+   data.message = w.infolist_string(list_ptr, "message")
+   data.time = w.infolist_time(list_ptr, "date")
+
+   return data
+end
+
+function collect_urls(buffer)
+   local index, data, list = 0, {}
    local buf_lines = w.infolist_get("buffer_lines", buffer, "")
-   if buf_lines and buf_lines ~= "" then
-      w.infolist_prev(buf_lines)
-      process(buf_lines)
-      while w.infolist_prev(buf_lines) == 1 do
-         process(buf_lines)
+   if not buf_lines or buf_lines == "" then
+      return
+   end
+
+   list = w.infolist_new()
+   local add_cb = function (url, msg)
+      index = index + 1
+      data.index = index
+      data.url = url
+      data.message = msg
+      create_new_url_entry(list, data)
+   end
+
+   while w.infolist_next(buf_lines) == 1 do
+      if w.infolist_integer(buf_lines, "displayed") == 1 then
+         data = get_data_from_buf_line(buf_lines)
+         process_urls_in_message(data.message, add_cb)
       end
-      w.infolist_free(buf_lines)
+   end
+   w.infolist_free(buf_lines)
+   if index == 0 then
+      w.infolist_free(list)
+      list = nil
+   else
+      g.last_index = index
    end
    return list
 end
@@ -539,7 +585,8 @@ function default_item_handler(name)
    if not g.list or g.list == "" then
       return ""
    else
-      local s = w.infolist_string(g.list, name)
+      local func = name == "index" and w.infolist_integer or w.infolist_string
+      local s = func(g.list, name)
       if g.config[name .. "_color"] then
          s = w.color(g.config[name .. "_color"]) .. s
       end
@@ -608,7 +655,7 @@ function item_help_cb()
          "%s<ctrl-p>%s prev highlight " ..
          "%s<ctrl-n>%s next highlight " ..
          "%s<tab>%s show custom commands " ..
-         "%s<0-9a-z>%s run custom command",
+         "%s<alt-#>%s run custom command",
          help_color, key_color, help_color,
          key_color, help_color,
          key_color, help_color,
@@ -621,23 +668,41 @@ function item_help_cb()
          key_color, help_color)
 
       if g.enable_help == 2 then
-         local cmd, fmt = "", "\r%s%s%s => %s"
+         local cmd, fmt = "", "\r%s%sAlt-%s%s => %s"
          for k = 0, 9 do
             local c = tostring(k)
             if g.custom_commands[c] then
-               cmd = cmd ..  string.format(fmt, key_color, c, help_color, g.custom_commands[c])
+               cmd = cmd ..
+                     string.format(
+                        fmt,
+                        help_color,
+                        key_color,
+                        c,
+                        help_color,
+                        g.custom_commands[c])
             end
          end
          for k = string.byte('a'), string.byte('z') do
             local c = string.char(k)
             if g.custom_commands[c] then
-               cmd = cmd .. string.format(fmt, key_color, c, help_color, g.custom_commands[c])
+               cmd = cmd ..
+                     string.format(
+                        fmt,
+                        help_color,
+                        key_color,
+                        c,
+                        help_color,
+                        g.custom_commands[c])
             end
          end
          if cmd == "" then
-            help_text = help_text .. "\r[ No custom commands ]"
+            help_text = help_text .. "\r" ..
+                        help_color ..
+                        "[ No custom commands ]"
          else
-            help_text = help_text .. "\r[ Custom commands ]".. cmd
+            help_text = help_text .. "\r" ..
+                        help_color ..
+                        "[ Custom commands ]".. cmd
          end
       end
       return help_text
@@ -665,7 +730,7 @@ function item_status_cb()
 end
 
 function update_list_items()
-   for _, name in pairs(g.bar_items.list) do
+   for _, name in ipairs(g.bar_items.list) do
       w.bar_item_update(g.script.name .. "_" .. name)
    end
 end
@@ -686,11 +751,11 @@ function config_cb(_, opt_name, opt_value)
 end
 
 function setup_bar()
-   for _, name in pairs(g.bar_items.list) do
+   for _, name in ipairs(g.bar_items.list) do
       w.bar_item_new(g.script.name .. "_" .. name, "item_" .. name .. "_cb", "")
    end
 
-   for _, name in pairs(g.bar_items.extra) do
+   for _, name in ipairs(g.bar_items.extra) do
       w.bar_item_new(g.script.name .. "_" .. name, "item_" .. name .. "_cb", "")
    end
 

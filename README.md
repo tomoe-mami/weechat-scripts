@@ -2,16 +2,14 @@ These are a few Lua scripts I wrote for [Weechat][].
 
 - **pastebuf** is for viewing the content of a pastebin URL.
 
-- **msgcolor** is for colorizing all lines in a buffer with the same color.
+- **urlselect** is for interactively select URLs in a buffer using a bar.
+
+- **chatbuf_color** is for colorizing all lines in a buffer with the same color.
   Useful for merged buffers.
 
 - **mpdbitl** is the 'Now Playing' status for [bitlbee][] + [mpd][]
 
 - **coldlist** is half-assed hotlist-like notification for merged buffers.
-
-- **urlselect** is for interactively select URLs in a buffer and then store it
-  into X clipboard or [tmux][] paste buffer. **Doesn't work in Weechat 0.4.4**
-  and I'm too lazy to fix it.
 
 - **tagattr** is for adding labels and apply custom color to messages with
   certain tags. **This is obsolete since Weechat 0.4.4**. A trigger can do its
