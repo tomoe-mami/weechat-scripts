@@ -8,6 +8,11 @@ local g = {
       description = "A bar for selecting URLs inside current buffer"
    },
    defaults = {
+      time_format = {
+         type = "string",
+         value = "%H:%M:%S",
+         description = "Format of time"
+      },
       status_timeout = {
          type = "number",
          value = 1300,
@@ -22,6 +27,11 @@ local g = {
          type = "string",
          value = "",
          description = "Color for nickname. Leave empty to use Weechat's nick color"
+      },
+      highlight_color = {
+         type = "string",
+         value = "${weechat.color.chat_highlight},${weechat.color.chat_highlight_bg}",
+         description = "Nickname color for highlighted message" 
       },
       index_color = {
          type = "string",
@@ -62,7 +72,6 @@ local g = {
    config = {},
    active = false,
    list = "",
-   bar = "",
    bar_items = { 
       list = {"index", "nick", "url", "time", "message" },
       extra = { "title", "help", "status" }
@@ -70,20 +79,26 @@ local g = {
    custom_commands = {},
    hooks = {},
    current_status = "",
-   enable_help = 0,
+   enable_help = false,
    last_index = 0
 }
 
+g.bar = {
+   main = { name = g.script.name },
+   help = { name = g.script.name .. "_help" }
+}
+
 g.keys = {
-   ["meta2-B"]       = "navigate next",
-   ["meta2-A"]       = "navigate previous",
-   ["meta2-1~"]      = "navigate last",
-   ["meta2-4~"]      = "navigate first",
-   ["ctrl-P"]        = "navigate previous-highlight",
-   ["ctrl-N"]        = "navigate next-highlight",
-   ["ctrl-C"]        = "deactivate",
-   ["ctrl-I"]        = "help commands",
-   ["?"]             = "help"
+      ["meta2-B"] = "navigate next",
+      ["meta2-A"] = "navigate previous",
+     ["meta2-1~"] = "navigate last",
+     ["meta2-4~"] = "navigate first",
+       ["ctrl-P"] = "navigate previous-highlight",
+       ["ctrl-N"] = "navigate next-highlight",
+       ["ctrl-S"] = "hsignal",
+       ["ctrl-C"] = "deactivate",
+      ["meta-OP"] = "help",
+    ["meta2-11~"] = "help"
 }
 
 function setup()
@@ -125,7 +140,7 @@ function init_config()
    for name, info in pairs(g.defaults) do
       local value
       if w.config_is_set_plugin(name) == 0 then
-         value = info.value
+         value = w.string_eval_expression(info.value, {}, {}, {})
          w.config_set_plugin(name, value)
          if info.description and info.description ~= "" then
             w.config_set_desc_plugin(name, info.description)
@@ -147,8 +162,11 @@ function init_config()
          local opt_name = w.infolist_string(cfg, "full_name")
          local opt_value = w.infolist_string(cfg, "value")
          local key = opt_name:sub(#prefix + 1)
-         if set_custom_command(key, opt_value, true) then
-            total_cmd = total_cmd + 1
+         if key then
+            local label = w.config_get_plugin("label." .. key)
+            if set_custom_command(key, opt_value, label, true) then
+               total_cmd = total_cmd + 1
+            end
          end
       end
       w.infolist_free(cfg)
@@ -156,7 +174,7 @@ function init_config()
    return first_run, total_cmd
 end
 
-function set_custom_command(key, cmd, silent)
+function set_custom_command(key, cmd, label, silent)
    if not key or not key:match("^[0-9a-z]$") then
       w.config_unset_plugin("cmd." .. key)
       if not silent then
@@ -172,10 +190,15 @@ function set_custom_command(key, cmd, silent)
       if not cmd or cmd == "" then
          if g.keys[key_code] then g.keys[key_code] = nil end
          if g.custom_commands[key] then g.custom_commands[key] = nil end
+         if not silent then
+            print("Key ${color:bold}${key}${color:-bold} removed", { key = key })
+         end
       else
          g.keys[key_code] = "run " .. key
-         g.custom_commands[key] = cmd
-
+         g.custom_commands[key] = { command = cmd }
+         if label and label ~= "" then
+            g.custom_commands[key].label = label
+         end
          if not silent then
             print(
                "Key ${color:bold}${key}${color:-bold} bound to command: " ..
@@ -184,6 +207,12 @@ function set_custom_command(key, cmd, silent)
          end
       end
       return true
+   end
+end
+
+function set_custom_label(key, label)
+   if key and key ~= "" and g.custom_commands[key] then
+      g.custom_commands[key].label = label
    end
 end
 
@@ -199,7 +228,8 @@ function setup_hooks()
       "|| deactivate " ..
       "|| navigate <direction> " ..
       "|| run <key> " ..
-      "|| help [commands]",
+      "|| hsignal " ..
+      "|| help",
 [[
       activate: Activate the URL selection bar (default action).
           bind: Bind a key to a Weechat command.
@@ -217,8 +247,9 @@ manually:
     deactivate: Deactivate URL selection bar.
       navigate: Navigate within the list of URLs.
            run: Run the command bound to a key.
-          help: Show help text in URL selection bar. If argument "commands"
-                specified, will also show list of available custom commands.
+       hsignal: Send a "urlselect_current" hsignal with data from currently
+                selected URL.
+          help: Toggle help bar.
    <direction>: Direction of movement.
                 Valid values are: next, previous, first, last,
                 next-highlight, previous-highlight.
@@ -232,13 +263,14 @@ KEY BINDINGS
           End: Move to newest URL.
        Ctrl-P: Move to previous URL that contains highlight.
        Ctrl-N: Move to next URL that contains highlight.
-        Enter: Insert URL into buffer input.
+       Ctrl-S: Send hsignal.
  Alt-[0-9a-z]: Run custom command.
+           F1: Toggle help bar.
 
 ]],
       "activate || bind || unbind || list-commands || deactivate || run || " ..
       "navigate next|previous|first|last|previous-highlight|next-highlight || " ..
-      "help commands",
+      "help",
       "command_cb",
       "")
 end
@@ -258,12 +290,12 @@ function set_keys(buffer, flag)
    end
 end
 
-function set_bar(flag)
-   if g.bar and g.bar ~= "" then
+function set_bar(key, flag)
+   if g.bar[key].ptr and g.bar[key].ptr ~= "" then
       if not flag then
-         w.bar_set(g.bar, "hidden", "on")
+         w.bar_set(g.bar[key].ptr, "hidden", "on")
       else
-         w.bar_set(g.bar, "hidden", "off")
+         w.bar_set(g.bar[key].ptr, "hidden", "off")
       end
    end
 end
@@ -276,20 +308,26 @@ end
 
 function new_line_cb(_, buffer, date, tags, displayed, highlighted, prefix, message)
    if displayed == "1" and g.list and g.list ~= "" then
-      local data = {}
+      local data, indexes = {}, {}
       data.nick = extract_nick_from_tags(tags)
+      data.prefix = w.string_remove_color(prefix, "")
       data.message = message
-      data.time = os.date("%Y-%m-%d %H:%M:%S", date)
+      data.time = tonumber(date)
       data.highlighted = tonumber(highlighted)
 
       process_urls_in_message(data.message, function (url, msg)
          data.message = msg
          data.index = g.last_index + 1
          g.last_index = data.index
+         table.insert(indexes, data.index)
+
          data.url = url
          create_new_url_entry(g.list, data)
-         set_status("New URL added at index " .. data.index)
       end)
+
+      if #indexes > 0 then
+         set_status("New URL added at index: " .. table.concat(indexes, ", "))
+      end
    end
    return w.WEECHAT_RC_OK
 end
@@ -314,7 +352,7 @@ function cmd_action_activate(buffer, args)
             "new_line_cb", "")
 
          g.active = true
-         set_bar(true)
+         set_bar("main", true)
          cmd_action_navigate(buffer, "previous")
          set_keys(buffer, true)
          w.bar_item_update(g.script.name .. "_title")
@@ -327,10 +365,10 @@ end
 
 function cmd_action_deactivate(buffer)
    if g.active then
-      g.active = false
-      set_bar(false)
+      g.active, g.enable_help, g.last_index = false, false, 0
+      set_bar("main", false)
+      set_bar("help", false)
       set_keys(buffer, false)
-      g.last_index = 0
       if g.list and g.list ~= "" then
          w.infolist_free(g.list)
          g.list = nil
@@ -415,22 +453,40 @@ function cmd_action_unbind(buffer, args)
    return w.WEECHAT_RC_OK
 end
 
-function eval_current_entry(text)
-   local param = {
+function get_current_hashtable(raw_timestamp)
+   local tm = w.infolist_integer(g.list, "time")
+   if not raw_timestamp then
+      tm = os.date(g.config.time_format)
+   end
+
+   return {
       url = w.infolist_string(g.list, "url"),
       nick = w.infolist_string(g.list, "nick"),
-      time = w.infolist_string(g.list, "time"),
+      time = tm,
       message = w.infolist_string(g.list, "message"),
       index = w.infolist_integer(g.list, "index")
    }
-   return w.string_eval_expression(text, {}, param, {})
+end
+
+function eval_current_entry(text)
+   return w.string_eval_expression(text, {}, get_current_hashtable(), {})
+end
+
+function cmd_action_hsignal(buffer, args)
+   if g.list and g.list ~= "" then
+      w.hook_hsignal_send(
+         g.script.name .. "_current",
+         get_current_hashtable(true))
+   end
+   return w.WEECHAT_RC_OK
 end
 
 function cmd_action_run(buffer, args)
    if g.list and g.list ~= "" then
       if g.custom_commands[args] then
-         local cmd = eval_current_entry(g.custom_commands[args])
-         set_status("Running cmd " .. args)
+         local cmd = eval_current_entry(g.custom_commands[args].command)
+         local label = g.custom_commands[args].label or args
+         set_status("Running cmd " .. label)
          w.command(buffer, cmd)
       end
    end
@@ -444,13 +500,13 @@ function cmd_action_list_commands(buffer, args)
    for k = 0, 9 do
       local c = tostring(k)
       if g.custom_commands[c] then
-         print(string.format(fmt, c, g.custom_commands[c]), opt)
+         print(string.format(fmt, c, g.custom_commands[c].command), opt)
       end
    end
    for k = string.byte('a'), string.byte('z') do
       local c = string.char(k)
       if g.custom_commands[c] then
-         print(string.format(fmt, c, g.custom_commands[c]), opt)
+         print(string.format(fmt, c, g.custom_commands[c].command), opt)
       end
    end
 end
@@ -461,11 +517,8 @@ function buffer_deactivated_cb(buffer, _, _)
 end
 
 function cmd_action_help(buffer, args)
-   if args == "commands" then
-      g.enable_help = (g.enable_help == 2 and 1 or 2)
-   else
-      g.enable_help = (g.enable_help == 0 and 1 or 0)
-   end
+   g.enable_help = not g.enable_help
+   set_bar("help", g.enable_help)
    w.bar_item_update(g.script.name .. "_help")
    return w.WEECHAT_RC_OK
 end
@@ -479,6 +532,7 @@ function command_cb(_, buffer, param)
       bind              = cmd_action_bind,
       unbind            = cmd_action_unbind,
       run               = cmd_action_run,
+      hsignal           = cmd_action_hsignal,
       help              = cmd_action_help,
       ["list-commands"] = cmd_action_list_commands
    }
@@ -532,20 +586,38 @@ function create_new_url_entry(list, data)
    local item = w.infolist_new_item(list)
    w.infolist_new_var_string(item, "message", data.message or "")
    w.infolist_new_var_string(item, "nick", data.nick or "")
-   w.infolist_new_var_string(item, "time", data.time or "")
+   w.infolist_new_var_string(item, "prefix", data.prefix or "")
+   w.infolist_new_var_integer(item, "time", data.time or 0)
    w.infolist_new_var_string(item, "url", data.url or "")
    w.infolist_new_var_integer(item, "index", data.index or 0)
    w.infolist_new_var_integer(item, "highlighted", data.highlighted or 0)
    return item
 end
 
+function convert_datetime_into_timestamp(time_string)
+   local year, month, day, hour, minute, second =
+      time_string:match("^(%d+)-(%d+)-(%d+) (%d+):(%d+):(%d+)$")
+
+   return os.time({
+      year  = tonumber(year or 0),
+      month = tonumber(month or 0),
+      day   = tonumber(day or 0),
+      hour  = tonumber(hour or 0),
+      min   = tonumber(minute or 0),
+      sec   = tonumber(second or 0)
+   })
+end
+
 function get_data_from_buf_line(list_ptr)
-   local data = {}
-   data.nick = extract_nick_from_tags(w.infolist_string(list_ptr, "tags"))
+   local data, tags = {}
+   data.nick, tags = extract_nick_from_tags(w.infolist_string(list_ptr, "tags"))
+   data.prefix = w.string_remove_color(w.infolist_string(list_ptr, "prefix"), "")
+   if tags:match(",logger_backlog,") then
+      data.prefix = "backlog: " .. data.prefix
+   end
    data.highlighted = w.infolist_integer(list_ptr, "highlight")
    data.message = w.infolist_string(list_ptr, "message")
-   data.time = w.infolist_time(list_ptr, "date")
-
+   data.time = convert_datetime_into_timestamp(w.infolist_time(list_ptr, "date"))
    return data
 end
 
@@ -603,7 +675,13 @@ function item_url_cb()
 end
 
 function item_time_cb()
-   return default_item_handler("time")
+   if not g.list or g.list == "" then
+      return ""
+   else
+      local tm = w.infolist_integer(g.list, "time")
+      return w.color(g.config.time_color) ..
+             os.date(g.config.time_format, tm)
+   end
 end
 
 function item_index_cb()
@@ -614,25 +692,28 @@ function item_nick_cb()
    if not g.list or g.list == "" then
       return ""
    else
-      local color
-      local s = w.infolist_string(g.list, "nick")
-      if not s or s == "" then
-         s = "*"
-         color = "default"
+      local color = g.config.nick_color
+      local text = w.infolist_string(g.list, "nick")
+      if w.infolist_integer(g.list, "highlighted") == 1 and
+         g.config.highlight_color ~= "" then
+         color = g.config.highlight_color
+      elseif g.config.nick_color ~= "" then
+         color = g.config.nick_color
+      elseif text and text ~= "" then
+         color = w.info_get("irc_nick_color_name", text)
       else
-         if g.config.nick_color and g.config.nick_color ~= "" then
-            color = g.config.nick_color
-         else
-            color = w.info_get("irc_nick_color_name", s)
-         end
+         color = "default"
       end
-      return w.color(color) .. s
+      if not text or text == "" then
+         text = w.infolist_string(g.list, "prefix")
+      end
+      return w.color(color) .. text .. w.color("reset")
    end
 end
 
 function item_title_cb()
    return string.format(
-      "%s%s: Press %s?%s for help",
+      "%s%s: %s<F1>%s toggle help",
       w.color(g.config.title_color),
       g.script.name,
       w.color(g.config.key_color),
@@ -640,69 +721,43 @@ function item_title_cb()
 end
 
 function item_help_cb()
-   if not g.enable_help or g.enable_help == 0 then
+   if not g.enable_help then
       return ""
    else
       local key_color = w.color(g.config.key_color)
       local help_color = w.color(g.config.help_color)
 
-      local help_text = string.format(
-         "\r%s%s<ctrl-c>%s close " ..
-         "%s<up>%s prev " ..
-         "%s<down>%s next " ..
-         "%s<home>%s oldest " ..
-         "%s<end>%s newest " ..
-         "%s<ctrl-p>%s prev highlight " ..
-         "%s<ctrl-n>%s next highlight " ..
-         "%s<tab>%s show custom commands " ..
-         "%s<alt-#>%s run custom command",
-         help_color, key_color, help_color,
-         key_color, help_color,
-         key_color, help_color,
-         key_color, help_color,
-         key_color, help_color,
-         key_color, help_color,
-         key_color, help_color,
-         key_color, help_color,
-         key_color, help_color,
-         key_color, help_color)
+      local help_text = w.string_eval_expression([[
+${kc}<ctrl-c>${hc} close
+${kc}<up>${hc} prev
+${kc}<down>${hc} next
+${kc}<home>${hc} first
+${kc}<end>${hc} last
+${kc}<ctrl-p>${hc} prev highlight
+${kc}<ctrl-n>${hc} next highlight
+${kc}<ctrl-s>${hc} send hsignal
+]],
+   {}, { kc = key_color, hc = help_color }, {})
 
-      if g.enable_help == 2 then
-         local cmd, fmt = "", "\r%s%sAlt-%s%s => %s"
-         for k = 0, 9 do
-            local c = tostring(k)
-            if g.custom_commands[c] then
-               cmd = cmd ..
-                     string.format(
-                        fmt,
-                        help_color,
-                        key_color,
-                        c,
-                        help_color,
-                        g.custom_commands[c])
-            end
+      local fmt = "%s<alt-%s>%s %s\n"
+      for k = 0, 9 do
+         local c = tostring(k)
+         if g.custom_commands[c] then
+            local cmd = g.custom_commands[c]
+            local label = cmd.label or cmd.command
+            help_text =
+               help_text ..
+               string.format(fmt, key_color, c, help_color, label)
          end
-         for k = string.byte('a'), string.byte('z') do
-            local c = string.char(k)
-            if g.custom_commands[c] then
-               cmd = cmd ..
-                     string.format(
-                        fmt,
-                        help_color,
-                        key_color,
-                        c,
-                        help_color,
-                        g.custom_commands[c])
-            end
-         end
-         if cmd == "" then
-            help_text = help_text .. "\r" ..
-                        help_color ..
-                        "[ No custom commands ]"
-         else
-            help_text = help_text .. "\r" ..
-                        help_color ..
-                        "[ Custom commands ]".. cmd
+      end
+      for k = string.byte('a'), string.byte('z') do
+         local c = string.char(k)
+         if g.custom_commands[c] then
+            local cmd = g.custom_commands[c]
+            local label = cmd.label or cmd.command
+            help_text =
+               help_text ..
+               string.format(fmt, key_color, c, help_color, label)
          end
       end
       return help_text
@@ -747,6 +802,8 @@ function config_cb(_, opt_name, opt_value)
       g.config[name] = opt_value
    elseif name:sub(1, 4) == "cmd." then
       set_custom_command(name:sub(5), opt_value)
+   elseif name:sub(1, 6) == "label." then
+      set_custom_label(name:sub(7), opt_value)
    end
 end
 
@@ -759,27 +816,45 @@ function setup_bar()
       w.bar_item_new(g.script.name .. "_" .. name, "item_" .. name .. "_cb", "")
    end
 
-   local bar = w.bar_search(g.script.name)
-   if not bar or bar == "" then
-      bar = w.bar_new(
-         g.script.name,       -- name
-         "on",                -- hidden?
-         2000,                -- priority
-         "window",            -- type
-         "active",            -- condition
-         "top",               -- position
-         "horizontal",        -- vfilling
-         "vertical",          -- hfilling
-         0,                   -- size
-         0,                   -- max size
-         "default",           -- text fg
-         "cyan",              -- delim fg
-         "default",           -- bar bg
-         "on",                -- separator
-         "[urlselect_title] +#urlselect_index +<urlselect_nick> " ..
-         "+urlselect_message,urlselect_status,urlselect_help") -- items
+   local settings = {
+      main = {
+         priority = 3000,
+         filling_tb = "horizontal",
+         max_size = 2,
+         items = w.string_eval_expression(
+            "[${s}_title] +#${s}_index +<${s}_nick> +${s}_message,${s}_status",
+            {}, { s = g.script.name }, {})
+      },
+      help = {
+         priority = 2999,
+         filling_tb = "columns_horizontal",
+         max_size = 6,
+         items = g.script.name .. "_help"
+      }
+   }
+
+   for key, info in pairs(g.bar) do
+      local bar = w.bar_search(info.name)
+      if not bar or bar == "" then
+         bar = w.bar_new(
+            info.name,                 -- name
+            "on",                      -- hidden?
+            settings[key].priority,    -- priority
+            "window",                  -- type
+            "active",                  -- condition
+            "top",                     -- position
+            settings[key].filling_tb,  -- filling top/bottom
+            "vertical",                -- filling left/right
+            0,                         -- size
+            settings[key].max_size,    -- max size
+            "default",                 -- text fg
+            "cyan",                    -- delim fg
+            "default",                 -- bar bg
+            "on",                      -- separator
+            settings[key].items)       -- items
+      end
+      g.bar[key].ptr = bar
    end
-   g.bar = bar
 end
 
 setup()

@@ -6,11 +6,16 @@ A bar for selecting URLs from current buffer. Requires Weechat 0.4.4 or higher.
 ![screenshot](http://i.imgur.com/d5NFVnO.png "urlselect bar at the top of weechat")
 
 
+
 ### Usage
 
 Simply run `/urlselect` to activate URL selection bar. You can use
-Up/Down/Home/End to navigate. Press ? to see the list of key bindings and Tab to
-see list of available custom commands (see **Custom Commands** below).
+arrow keys to navigate between URLs. Press F1 to see the list of keys and custom
+commands (see **Custom Commands** below). It's recommended to bind `/urlselect`
+to a key so it can be easily activated. For example, to use Alt+Enter run the
+following command in Weechat:
+
+    /key bind meta-ctrl-M /urlselect
 
 
 
@@ -26,10 +31,10 @@ You can use the following variables inside a command: `${url}`, `${time}`,
 `${index}`, `${nick}`, and `${message}`. They will be replaced by their actual
 values from the currently selected URL.
 
-For example, to bind Alt-3 to view the raw content of a URL inside Weechat you
+For example, to bind Alt-v to view the raw content of a URL inside Weechat you
 can use:
 
-    /urlselect bind 3 /exec -noln -nf url:${url}
+    /urlselect bind v /exec -noln -nf url:${url}
 
 
 To remove a custom command, simply unbind its key:
@@ -47,8 +52,12 @@ else on Weechat.
 
 ### Bar & Bar Items
 
-This script will create 1 bar and 8 bar items. The bar is called `urlselect`
-and its settings are available under `weechat.bar.urlselect.*`.
+This script will create 2 bars and 8 bar items. The first bar is called
+`urlselect`. This bar is used for displaying the info about currently selected
+URL. Its settings are available under `weechat.bar.urlselect.*`. The second bar
+is for showing the list of keys and custom commands. It is called
+`urlselect_help` and its settings are available under
+`weechat.bar.urlselect_help.*`. Both bars are hidden by default.
 
 The list of bar items are:
 
@@ -65,12 +74,20 @@ The list of bar items are:
 - **urlselect_message**: Message with its original colors (if there's any)
   stripped and the URL portion highlighted.
 
-- **urlselect_title**: Bar title. The one that says, `urlselect: Press ? for help`.
+- **urlselect_title**: Bar title. The one that says, `urlselect: <F1> toggle help`.
 
 - **urlselect_help**: Help text for showing keys and list of custom commands.
 
-- **urlselect_status**: Status notification. Active when certain activity occur.
+- **urlselect_status**: Status notification. Visible when certain activity occur.
   For example, running a custom command.
+
+
+
+### HSignal
+
+This script can send a hsignal `urlselect_current` when you press Ctrl-S. The
+hashtable sent with the signal has the following fields: `url`, `index`, `time`,
+`message`, and `nick`.
 
 
 
@@ -80,6 +97,10 @@ The list of bar items are:
 
 Timeout (in milliseconds) for displaying status notification (default: `1300`).
 
+##### plugins.var.lua.urlselect.time_format
+
+Format for displaying time (default: `%H:%M:%S`).
+
 ##### plugins.var.lua.urlselect.url_color
 
 Color for URL item (default: `_lightblue`).
@@ -88,6 +109,11 @@ Color for URL item (default: `_lightblue`).
 
 Color for nickname item. Leave this empty to use Weechat's nick color (default
 is empty).
+
+##### plugins.var.lua.urlselect.highlight_color
+
+Nickname color for URL from message with highlight (default is the value of
+`weechat.color.chat_highlight` and `weechat.color.chat_highlight_bg`).
 
 ##### plugins.var.lua.urlselect.index_color
 
