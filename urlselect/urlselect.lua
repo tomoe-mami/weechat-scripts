@@ -949,7 +949,15 @@ function item_status_cb()
          s = w.color(g.config.status_color) .. s
       end
       if g.config.status_timeout and g.config.status_timeout > 0 then
-         w.hook_timer(g.config.status_timeout, 0, 1, "set_status", "")
+         if g.hooks.timer then
+            w.unhook(g.hooks.timer)
+         end
+         g.hooks.timer = w.hook_timer(
+            g.config.status_timeout,
+            0,
+            1,
+            "set_status",
+            "")
       end
       return s
    end
