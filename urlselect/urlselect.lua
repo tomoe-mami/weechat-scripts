@@ -5,9 +5,14 @@ local g = {
       version = "0.2",
       author = "tomoe-mami <https://github.com/tomoe-mami>",
       license = "WTFPL",
-      description = "A bar for selecting URLs inside current buffer"
+      description = "A bar for selecting URLs"
    },
    defaults = {
+      scan_merged_buffers = {
+         type = "boolean",
+         value = false,
+         description = "Scan URLs from buffers that are merged with the current one"
+      },
       time_format = {
          type = "string",
          value = "%H:%M:%S",
@@ -17,6 +22,13 @@ local g = {
          type = "number",
          value = 1300,
          description = "Timeout for displaying status notification (in milliseconds)"
+      },
+      buffer_name = {
+         type = "string",
+         value = "normal",
+         description =
+            "Type of name to use inside urlselect_buffer_name item. " ..
+            "Valid values are \"full\", \"normal\", and \"short\""
       },
       url_color = {
          type = "string",
@@ -58,6 +70,16 @@ local g = {
          value = "cyan",
          description = "Color for list of keys"
       },
+      buffer_number_color = {
+         type = "string",
+         value = "brown",
+         description = "Color for buffer number"
+      },
+      buffer_name_color = {
+         type = "string",
+         value = "green",
+         description = "Color for buffer name"
+      },
       help_color = {
          type = "string",
          value = "default",
@@ -73,8 +95,8 @@ local g = {
    active = false,
    list = "",
    bar_items = { 
-      list = {"index", "nick", "url", "time", "message" },
-      extra = { "title", "help", "status" }
+      list = {"index", "nick", "url", "time", "message", "buffer_name", "buffer_number"},
+      extra = { "title", "help", "status"}
    },
    custom_commands = {},
    hooks = {},
@@ -102,20 +124,27 @@ g.keys = {
 }
 
 function setup()
-   w.register(
-      g.script.name,
-      g.script.author,
-      g.script.version,
-      g.script.license,
-      g.script.description,
-      "", "")
+   assert(
+      w.register(
+         g.script.name,
+         g.script.author,
+         g.script.version,
+         g.script.license,
+         g.script.description,
+         "", ""),
+      "Unable to register script. Perhaps it's already loaded before?")
+
+   local wee_ver = tonumber(w.info_get("version_number", "") or 0)
+   if wee_ver < 0x00040400 then
+      error("This script requires WeeChat v0.4.4 or higher")
+   end
 
    local first_run, total_cmd = init_config()
    setup_hooks()
    if total_cmd == 0 and first_run then
       print("No custom commands configured. Adding default custom command...")
-      w.config_set_plugin("cmd.1", "/exec -bg -nosh xdg-open ${url}")
-      w.config_set_plugin("cmd.2", "/input insert ${url}\\x20")
+      w.config_set_plugin("cmd.o", "/exec -bg -nosh xdg-open ${url}")
+      w.config_set_plugin("cmd.i", "/input insert ${url}\\x20")
    end
    setup_bar()
 end
@@ -140,7 +169,11 @@ function init_config()
    for name, info in pairs(g.defaults) do
       local value
       if w.config_is_set_plugin(name) == 0 then
-         value = w.string_eval_expression(info.value, {}, {}, {})
+         if info.type == "boolean" then
+            value = info.value and 1 or 0
+         else
+            value = w.string_eval_expression(info.value, {}, {}, {})
+         end
          w.config_set_plugin(name, value)
          if info.description and info.description ~= "" then
             w.config_set_desc_plugin(name, info.description)
@@ -149,8 +182,11 @@ function init_config()
          first_run = false
          value = w.config_get_plugin(name)
       end
-      if info.type == "number" then
+      if info.type == "number" or info.type == "boolean" then
          value = tonumber(value)
+         if info.type == "boolean" then
+            value = value ~= 0
+         end
       end
       g.config[name] = value
    end
@@ -306,14 +342,28 @@ function extract_nick_from_tags(tags)
    return nick, tags
 end
 
-function new_line_cb(_, buffer, date, tags, displayed, highlighted, prefix, message)
+function new_line_cb(buffer, evbuf, date, tags, displayed, highlighted, prefix, message)
    if displayed == "1" and g.list and g.list ~= "" then
+      if g.config.scan_merged_buffers then
+         local evbuf_num = w.buffer_get_integer(evbuf, "number")
+         local buf_num = w.buffer_get_integer(buffer, "number")
+         if evbuf_num ~= buf_num then
+            return
+         end
+      elseif buffer ~= evbuf then
+         return
+      end
+
       local data, indexes = {}, {}
       data.nick = extract_nick_from_tags(tags)
       data.prefix = w.string_remove_color(prefix, "")
       data.message = message
       data.time = tonumber(date)
       data.highlighted = tonumber(highlighted)
+      data.buffer_full_name = w.buffer_get_string(evbuf, "full_name")
+      data.buffer_name = w.buffer_get_string(evbuf, "name")
+      data.buffer_short_name = w.buffer_get_string(evbuf, "short_name")
+      data.buffer_number = w.buffer_get_integer(evbuf, "number")
 
       process_urls_in_message(data.message, function (url, msg)
          data.message = msg
@@ -336,6 +386,7 @@ function cmd_action_activate(buffer, args)
    if not g.active then
       g.list = collect_urls(buffer)
       if g.list and g.list ~= "" then
+
          g.hooks.switch = w.hook_signal(
             "buffer_switch",
             "buffer_deactivated_cb",
@@ -347,9 +398,10 @@ function cmd_action_activate(buffer, args)
             buffer)
 
          g.hooks.print = w.hook_print(
-            buffer,
+            "",
             "", "://", 1,
-            "new_line_cb", "")
+            "new_line_cb",
+            buffer)
 
          g.active = true
          set_bar("main", true)
@@ -456,7 +508,7 @@ end
 function get_current_hashtable(raw_timestamp)
    local tm = w.infolist_integer(g.list, "time")
    if not raw_timestamp then
-      tm = os.date(g.config.time_format)
+      tm = os.date(g.config.time_format, tm)
    end
 
    return {
@@ -464,7 +516,11 @@ function get_current_hashtable(raw_timestamp)
       nick = w.infolist_string(g.list, "nick"),
       time = tm,
       message = w.infolist_string(g.list, "message"),
-      index = w.infolist_integer(g.list, "index")
+      index = w.infolist_integer(g.list, "index"),
+      buffer_number = w.infolist_integer(g.list, "buffer_number"),
+      buffer_name = w.infolist_string(g.list, "buffer_name"),
+      buffer_short_name = w.infolist_string(g.list, "buffer_short_name"),
+      buffer_full_name = w.infolist_string(g.list, "buffer_full_name")
    }
 end
 
@@ -511,7 +567,7 @@ function cmd_action_list_commands(buffer, args)
    end
 end
 
-function buffer_deactivated_cb(buffer, _, _)
+function buffer_deactivated_cb(buffer)
    cmd_action_deactivate(buffer)
    return w.WEECHAT_RC_OK
 end
@@ -591,6 +647,10 @@ function create_new_url_entry(list, data)
    w.infolist_new_var_string(item, "url", data.url or "")
    w.infolist_new_var_integer(item, "index", data.index or 0)
    w.infolist_new_var_integer(item, "highlighted", data.highlighted or 0)
+   w.infolist_new_var_string(item, "buffer_full_name", data.buffer_full_name)
+   w.infolist_new_var_string(item, "buffer_name", data.buffer_name)
+   w.infolist_new_var_string(item, "buffer_short_name", data.buffer_short_name)
+   w.infolist_new_var_integer(item, "buffer_number", data.buffer_number or 0)
    return item
 end
 
@@ -608,39 +668,62 @@ function convert_datetime_into_timestamp(time_string)
    })
 end
 
-function get_data_from_buf_line(list_ptr)
-   local data, tags = {}
-   data.nick, tags = extract_nick_from_tags(w.infolist_string(list_ptr, "tags"))
-   data.prefix = w.string_remove_color(w.infolist_string(list_ptr, "prefix"), "")
-   if tags:match(",logger_backlog,") then
-      data.prefix = "backlog: " .. data.prefix
-   end
-   data.highlighted = w.infolist_integer(list_ptr, "highlight")
-   data.message = w.infolist_string(list_ptr, "message")
-   data.time = convert_datetime_into_timestamp(w.infolist_time(list_ptr, "date"))
-   return data
-end
 
 function collect_urls(buffer)
-   local index, data, list = 0, {}
+   if g.config.scan_merged_buffers then
+      local mixed_lines = w.hdata_pointer(
+         w.hdata_get("buffer"),
+         buffer,
+         "mixed_lines")
+      if mixed_lines and mixed_lines ~= "" then
+         return collect_urls_via_hdata(mixed_lines)
+      end
+   end
+   return collect_urls_via_infolist(buffer)
+end
+
+function collect_urls_via_infolist(buffer)
+   local index, info, list = 0, {}
    local buf_lines = w.infolist_get("buffer_lines", buffer, "")
    if not buf_lines or buf_lines == "" then
       return
    end
 
+   local buf_full_name = w.buffer_get_string(buffer, "full_name")
+   local buf_name = w.buffer_get_string(buffer, "name")
+   local buf_short_name = w.buffer_get_string(buffer, "short_name")
+   local buf_number = w.buffer_get_integer(buffer, "number")
+
    list = w.infolist_new()
+
    local add_cb = function (url, msg)
       index = index + 1
-      data.index = index
-      data.url = url
-      data.message = msg
-      create_new_url_entry(list, data)
+      info.index = index
+      info.url = url
+      info.message = msg
+      create_new_url_entry(list, info)
+   end
+
+   local get_info_from_current_line = function ()
+      local info, tags = {}
+      info.nick, tags = extract_nick_from_tags(w.infolist_string(buf_lines, "tags"))
+      info.prefix = w.string_remove_color(w.infolist_string(buf_lines, "prefix"), "")
+      if tags:match(",logger_backlog,") then
+         info.prefix = "backlog: " .. info.prefix
+      end
+      info.highlighted = w.infolist_integer(buf_lines, "highlight")
+      info.message = w.infolist_string(buf_lines, "message")
+      info.time = convert_datetime_into_timestamp(w.infolist_time(buf_lines, "date"))
+      info.buffer_full_name = buf_full_name
+      info.buffer_name = buf_name
+      info.buffer_short_name = buf_short_name
+      return info
    end
 
    while w.infolist_next(buf_lines) == 1 do
       if w.infolist_integer(buf_lines, "displayed") == 1 then
-         data = get_data_from_buf_line(buf_lines)
-         process_urls_in_message(data.message, add_cb)
+         info = get_info_from_current_line()
+         process_urls_in_message(info.message, add_cb)
       end
    end
    w.infolist_free(buf_lines)
@@ -653,17 +736,105 @@ function collect_urls(buffer)
    return list
 end
 
-function default_item_handler(name)
+function collect_urls_via_hdata(mixed_lines)
+   local index, info = 0, {}
+   local list = w.infolist_new()
+   local line = w.hdata_pointer(w.hdata_get("lines"), mixed_lines, "first_line")
+   local h_line = w.hdata_get("line")
+   local h_line_data = w.hdata_get("line_data")
+   local h_buf = w.hdata_get("buffer")
+
+   local add_cb = function (url, msg)
+      index = index + 1
+      info.index = index
+      info.url = url
+      info.message = msg
+      create_new_url_entry(list, info)
+   end
+
+   local get_info_from_current_line = function (data)
+      local info = {}
+
+      local buffer = w.hdata_pointer(h_line_data, data, "buffer")
+      info.buffer_full_name = w.hdata_string(h_buf, buffer, "full_name")
+      info.buffer_name = w.hdata_string(h_buf, buffer, "name")
+      info.buffer_short_name = w.hdata_string(h_buf, buffer, "short_name")
+      info.buffer_number = w.hdata_integer(h_buf, buffer, "number")
+
+      info.highlighted = w.hdata_char(h_line_data, data, "highlighted")
+      info.prefix = w.string_remove_color(w.hdata_string(h_line_data, data, "prefix"), "")
+      info.message = w.hdata_string(h_line_data, data, "message")
+      info.time = tonumber(w.hdata_time(h_line_data, data, "date") or 0)
+
+      local tag_count = w.hdata_get_var_array_size(h_line_data, data, "tags_array")
+      if tag_count > 0 then
+         for i = 0, tag_count do
+            local tag = w.hdata_string(h_line_data, data, i .. "|tags_array")
+            if tag:sub(1, 5) == "nick_" then
+               info.nick = tag:sub(6)
+            elseif tag == "logger_backlog" then
+               info.prefix = "backlog: " .. info.prefix
+            end
+         end
+      end
+      return info
+   end
+
+   while line and line ~= "" do
+      local data = w.hdata_pointer(h_line, line, "data")
+      if data and data ~= "" then
+         local displayed = w.hdata_char(h_line_data, data, "displayed")
+         if displayed == 1 then
+            info = get_info_from_current_line(data)
+            process_urls_in_message(info.message, add_cb)
+         end
+      end
+      line = w.hdata_move(h_line, line, 1)
+   end
+   if index == 0 then
+      w.infolist_free(list)
+      list = nil
+   else
+      g.last_index = index
+   end
+   return list
+end
+
+function default_item_handler(name, color_key)
    if not g.list or g.list == "" then
       return ""
    else
-      local func = name == "index" and w.infolist_integer or w.infolist_string
+      local func
+      if name == "index" or name == "buffer_number" then
+         func = w.infolist_integer
+      else
+         func = w.infolist_string
+      end
       local s = func(g.list, name)
-      if g.config[name .. "_color"] then
-         s = w.color(g.config[name .. "_color"]) .. s
+      if not color_key then
+         color_key = name .. "_color"
+      end
+      if g.config[color_key] then
+         s = w.color(g.config[color_key]) .. s
       end
       return s
    end
+end
+
+function item_buffer_number_cb()
+   return default_item_handler("buffer_number")
+end
+
+function item_buffer_name_cb()
+   local key
+   if g.config.buffer_name == "full" then
+      key = "buffer_full_name"
+   elseif g.config.buffer_name == "short" then
+      key = "buffer_short_name"
+   else
+      key = "buffer_name"
+   end
+   return default_item_handler(key, "buffer_name_color")
 end
 
 function item_message_cb()
@@ -796,8 +967,11 @@ function config_cb(_, opt_name, opt_value)
 
    if g.defaults[name] then
       local info = g.defaults[name]
-      if info.type == "number" then
+      if info.type == "number" or info.type == "boolean" then
          opt_value = tonumber(opt_value)
+         if info.type == "boolean" then
+            opt_value = opt_value ~= 0
+         end
       end
       g.config[name] = opt_value
    elseif name:sub(1, 4) == "cmd." then
@@ -822,7 +996,7 @@ function setup_bar()
          filling_tb = "horizontal",
          max_size = 2,
          items = w.string_eval_expression(
-            "[${s}_title] +#${s}_index +<${s}_nick> +${s}_message,${s}_status",
+            "[${s}_title],#${s}_index,[${s}_buffer_name],<${s}_nick>,${s}_message,${s}_status",
             {}, { s = g.script.name }, {})
       },
       help = {

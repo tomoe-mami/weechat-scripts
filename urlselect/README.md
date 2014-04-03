@@ -52,7 +52,7 @@ else on Weechat.
 
 ### Bar & Bar Items
 
-This script will create 2 bars and 8 bar items. The first bar is called
+This script will create 2 bars and 10 bar items. The first bar is called
 `urlselect`. This bar is used for displaying the info about currently selected
 URL. Its settings are available under `weechat.bar.urlselect.*`. The second bar
 is for showing the list of keys and custom commands. It is called
@@ -74,6 +74,11 @@ The list of bar items are:
 - **urlselect_message**: Message with its original colors (if there's any)
   stripped and the URL portion highlighted.
 
+- **urlselect_buffer_name**: Name of buffer where the message containing the
+  current URL is from. This is probably only useful in merged buffers.
+
+- **urlselect_buffer_number**: Buffer number.
+
 - **urlselect_title**: Bar title. The one that says, `urlselect: <F1> toggle help`.
 
 - **urlselect_help**: Help text for showing keys and list of custom commands.
@@ -93,6 +98,11 @@ hashtable sent with the signal has the following fields: `url`, `index`, `time`,
 
 ### Options
 
+##### plugins.var.lua.urlselect.scan_merged_buffers
+
+Collect URLs from all buffers that are merged with the current one. Set to `1`
+for yes and `0` for no (default: `0`).
+
 ##### plugins.var.lua.urlselect.status_timeout
 
 Timeout (in milliseconds) for displaying status notification (default: `1300`).
@@ -100,6 +110,13 @@ Timeout (in milliseconds) for displaying status notification (default: `1300`).
 ##### plugins.var.lua.urlselect.time_format
 
 Format for displaying time (default: `%H:%M:%S`).
+
+##### plugins.var.lua.urlselect.buffer_name
+
+Format of `urlselect_buffer_name` bar item. Valid values are `full`
+(eg: *irc.freenode.#weechat*), `normal` (eg: *freenode.#weechat*), and `short`
+(eg: *#weechat*). If it's set to other value, it will fallback to the default
+one (`normal`).
 
 ##### plugins.var.lua.urlselect.url_color
 
@@ -142,6 +159,14 @@ Color for help text (default: `default`)
 ##### plugins.var.lua.urlselect.status_color
 
 Color for status notification (default: `black,green`)
+
+##### plugins.var.lua.urlselect.buffer_number_color
+
+Color for buffer number (default: `brown`)
+
+##### plugins.var.lua.urlselect.buffer_name_color
+
+Color for buffer name (default: `green`)
 
 ##### plugins.var.lua.urlselect.cmd.*
 
