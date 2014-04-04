@@ -542,7 +542,9 @@ function cmd_action_bind(buffer, args)
 end
 
 function cmd_action_unbind(buffer, args)
-   w.config_unset_plugin("cmd." .. args)
+   for key in args:gmatch("([^%s]+)") do
+      w.config_unset_plugin("cmd." .. key)
+   end
    return w.WEECHAT_RC_OK
 end
 

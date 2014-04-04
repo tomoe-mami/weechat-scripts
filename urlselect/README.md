@@ -3,8 +3,12 @@ urlselect
 
 A bar for selecting URLs from current buffer. Requires Weechat 0.4.4 or higher.
 
-![screenshot](http://i.imgur.com/d5NFVnO.png "urlselect bar at the top of weechat")
+![screenshot][]
 
+[screenshot]: http://i.imgur.com/gdqyUxn.png
+
+*URL selection bar on top of weechat with the help bar showing list of
+available key bindings*
 
 
 ### Usage
@@ -62,8 +66,7 @@ is for showing the list of keys and custom commands. It is called
 
 The list of bar items are:
 
-- **urlselect_index**: Index of URL counted from the newest line (bottom) of
-  current buffer.
+- **urlselect_index**: Index of URL.
 
 - **urlselect_nick**: The nickname who mentioned the URL. If no nickname
   available, this will contain an asterisk.
