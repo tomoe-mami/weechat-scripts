@@ -25,6 +25,11 @@ local g = {
          type = "boolean",
          description = "Show line number"
       },
+      open_unsupported_url = {
+         value = false,
+         type = "boolean",
+         description = "Force open raw text of unsupported URL format"
+      },
       color_line_number = {
          value = "default,darkgray",
          type = "string",
@@ -60,64 +65,86 @@ local g = {
       }
    },
    sites = {
+      __generic__ = {
+         pattern = "^([^:/]+://[^/]+)(.*)$",
+         id = "%2",
+         raw = "%1%2"
+      },
       ["bpaste.net"] = {
-         pattern = "^http://bpaste%.net/show/(%w+)",
-         raw = "http://bpaste.net/raw/%s/"
+         pattern = "^([^:/]+://[^/]+)/show/(%w+)",
+         id = "%s",
+         raw = "%1/raw/%2"
       },
       ["codepad.org"] = {
-         pattern = "^http://codepad%.org/(%w+)",
-         raw = "http://codepad.org/%s/raw.php"
+         pattern = "^([^:/]+://[^/]+)/(%w+)",
+         id = "%2",
+         raw = "%1/%2/raw.php"
       },
       ["dpaste.com"] = {
-         pattern = "^http://dpaste%.com/(%w+)",
-         raw = "http://dpaste.com/%s/plain/"
+         pattern = "^([^:/]+://[^/]+)/(%w+)",
+         id = "%2",
+         raw = "%1/%2/plain/"
       },
       ["dpaste.de"] = {
-         pattern = "^https://dpaste%.de/(%w+)",
-         raw = "https://dpaste.de/%s/raw"
+         pattern = "^([^:/]+://[^/]+)/(%w+)",
+         id = "%2",
+         raw = "%1/%2/raw"
       },
       ["fpaste.org"] = {
-         pattern = "^http://fpaste%.org/(%w+/?%w*)",
-         raw = "http://fpaste.org/%s/raw"
+         pattern = "^([^:/]+://[^/]+)/(%w+/?%w*)",
+         id = "%2",
+         raw = "%1/%2/raw"
       },
       ["gist.github.com"] = {
-         pattern = "^https://gist%.github%.com/([^/]+/[^/]+)",
-         raw = "https://gist.github.com/%s/raw"
+         pattern = "^([^:/]+://[^/]+)/([^/]+/[^/]+)",
+         id = "%2",
+         raw = "https://gist.githubusercontent.com/%2/raw"
       },
       ["ideone.com"] = {
-         pattern = "^http://ideone%.com/(%w+)",
-         raw = "http://ideone.com/plain/%s"
+         pattern = "^([^:/]+://[^/]+)/(%w+)",
+         id = "%2",
+         raw = "%1/plain/%2"
       },
       ["paste.debian.net"] = {
-         pattern = "^http://paste%.debian%.net/(%w+)",
-         raw = "http://paste.debian.net/plain/%s"
+         pattern = "^([^:/]+://[^/]+)/(%w+)",
+         id = "%2",
+         raw = "%1/plain/%2"
       },
       ["paste.ee"] = {
-         pattern = "^http://paste%.ee/p/(%w+)",
-         raw = "http://paste.ee/r/%s"
+         pattern = "^([^:/]+://[^/]+)/p/(%w+)",
+         id = "%2",
+         raw = "%1/r/%2"
       },
       ["pastebin.ca"] = {
-         pattern = "^http://pastebin%.ca/(%w+)",
-         raw = "http://pastebin.ca/raw/%s"
+         pattern = "^([^:/]+://[^/]+)/(%w+)",
+         id = "%2",
+         raw = "%1/raw/%2"
       },
       ["pastebin.com"] = {
-         pattern = "^http://pastebin%.com/(%w+)",
-         raw = "http://pastebin.com/raw.php?i=%s"
+         pattern = "^([^:/]+://[^/]+)/(%w+)",
+         id = "%2",
+         raw = "%1/raw.php?i=%2"
       },
       ["pastebin.osuosl.org"] = {
-         pattern = "^http://pastebin%.osuosl%.org/(%w+)",
-         raw = "http://pastebin.osuosl.org/%s/raw/"
+         pattern = "^([^:/]+://[^/]+)/(%w+)",
+         id = "%2",
+         raw = "%1/%2/raw/"
       },
-      ["pastie.org"] = {
-         raw = "http://pastie.org/pastes/%s/download"
+      ["paste.opensuse.org"] = {
+         pattern = "^([^:/]+://[^/]+)/(%w+)",
+         id = "%2",
+         raw = "%1/view/raw/%2"
       },
+      ["pastie.org"] = {},
       ["sprunge.us"] = {
-         pattern = "^http://sprunge%.us/(%w+)",
-         raw = "http://sprunge.us/%s"
+         pattern = "^([^:/]+://[^/]+)/(%w+)",
+         id = "%2",
+         raw = "%1/%2"
       },
       ["vpaste.net"] = {
-         pattern = "http://vpaste%.net/(%w+)",
-         raw = "http://vpaste.net/%s?raw"
+         pattern = "^([^:/]+://[^/]+)/(%w+)",
+         id = "%2",
+         raw = "%1/%2?raw"
       }
    },
    keys = {
@@ -458,27 +485,38 @@ function request_head(short_name, url, options, callbacks)
    exec_generic(short_name, "url:" .. url, options, callbacks)
 end
 
+function copy_table(t)
+   local r = {}
+   for k,v in pairs(t) do
+      r[k] = v
+   end
+   return r
+end
+
 function get_site_config(u)
    local host = u:match("^https?://([^/]+)")
    if host then
       if host:match("^www%.") then
          host = host:sub(5)
       end
-      if g.sites[host] then
-         local site = g.sites[host]
-         site.host = host
-         if site.handler then
-            site.url = u
-            return site
+      local site
+      if not g.sites[host] then
+         if not g.config.open_unsupported_url then
+            return
          else
-            local id = u:match(site.pattern)
-            if id then
-               site.id = id
-               site.url = u
-               return site
-            end
+            site = copy_table(g.sites.__generic__)
          end
+      else
+         site = copy_table(g.sites[host])
       end
+
+      site.host = host
+      site.url = u
+      if not site.handler then
+         site.id = string.gsub(u, site.pattern, site.id)
+         site.raw = string.gsub(u, site.pattern, site.raw)
+      end
+      return site
    end
 end
 
@@ -1033,7 +1071,7 @@ function handler_normal(site, url, lang)
    else
       local buffer, short_name = create_buffer(site)
       if not buffer.hook then
-         local raw_url = string.format(site.raw, site.id)
+         --local raw_url = string.format(site.raw, site.id)
          local title = string.format("%s: Fetching %s", g.script.name, site.url)
 
          w.buffer_set(buffer.pointer, "title", title)
@@ -1059,7 +1097,7 @@ function handler_normal(site, url, lang)
             buffer.temp_name = os.tmpname()
             exec_generic(
                short_name,
-               "url:" .. raw_url,
+               "url:" .. site.raw,
                { file_out = buffer.temp_name },
                receive_paste)
          end
@@ -1077,7 +1115,7 @@ function handler_normal(site, url, lang)
                      w.color("chat_prefix_error"),
                      response.status_code,
                      response.status_message,
-                     raw_url)
+                     site.raw)
 
                   w.buffer_set(buffer.pointer, "title", title)
                   w.buffer_set(buffer.pointer, "hotlist", w.WEECHAT_HOTLIST_LOW)
@@ -1089,7 +1127,7 @@ function handler_normal(site, url, lang)
             -- sprunge doesn't allow HEAD method
             send_request(buffer, short_name)
          else
-            request_head(short_name, raw_url, nil, prepare_request)
+            request_head(short_name, site.raw, nil, prepare_request)
          end
       end
    end
@@ -1106,7 +1144,7 @@ function handler_pastie(site, url, lang)
    end
    site = {
       url = url,
-      raw = site.raw,
+      raw = string.format("http://pastie.org/pastes/%s/download", pastie_id),
       host = "pastie.org",
       id = pastie_id
    }
@@ -1311,6 +1349,8 @@ function setup()
 
    w.hook_config("plugins.var.lua." .. g.script.name .. ".*", "config_cb", "")
    w.hook_command_run("9001|/buffer set *", "buffer_mod_cb", "")
+
+   local bold, nobold = w.color("bold"), w.color("-bold")
    w.hook_command(
       g.script.name,
       "View the content of a paste inside a buffer" .. supported_sites,
@@ -1352,13 +1392,13 @@ Ctrl+(Up/Down/Left/Right)     Scroll buffer 10 lines/chars
 Home                          Scroll to the start of buffer
 End                           Scroll to the end of buffer
 ]],
-   w.color("bold"), w.color("-bold"),
-   w.color("bold"), w.color("-bold"),
-   w.color("bold"), w.color("-bold"),
-   w.color("bold"), w.color("-bold"),
-   w.color("bold"), w.color("-bold"),
-   w.color("bold"), w.color("-bold"),
-   w.color("bold"), w.color("-bold")),
+      bold, nobold,
+      bold, nobold,
+      bold, nobold,
+      bold, nobold,
+      bold, nobold,
+      bold, nobold,
+      bold, nobold),
 
       "**open-recent-url",
       "command_cb",
