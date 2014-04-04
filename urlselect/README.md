@@ -28,8 +28,9 @@ by pressing Alt followed by the key. The syntax to bind a key is:
     /urlselect bind <key> <command>
 
 You can use the following variables inside a command: `${url}`, `${time}`,
-`${index}`, `${nick}`, and `${message}`. They will be replaced by their actual
-values from the currently selected URL.
+`${index}`, `${nick}`, `${message}`, `${buffer_name}`, `${buffer_full_name}`,
+`${buffer_short_name}`, and `${buffer_number}`. They will be replaced by their
+actual values from the currently selected URL.
 
 For example, to bind Alt-v to view the raw content of a URL inside Weechat you
 can use:
@@ -97,6 +98,12 @@ hashtable sent with the signal has the following fields: `url`, `index`, `time`,
 
 
 ### Options
+
+##### plugins.var.lua.urlselect.tags
+
+Comma separated list of tags. If not empty, script will scan URLs only on
+messages with any of these tags (default:
+`notify_message,notify_private,notify_highlight`).
 
 ##### plugins.var.lua.urlselect.scan_merged_buffers
 

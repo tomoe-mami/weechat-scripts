@@ -13,6 +13,13 @@ local g = {
          value = false,
          description = "Scan URLs from buffers that are merged with the current one"
       },
+      tags = {
+         type = "list",
+         value = { "notify_message", "notify_private", "notify_highlight" },
+         description =
+            "Comma separated list of tags. If not empty, script will only " ..
+            "scan URLs from messages with any of these tags"
+      },
       time_format = {
          type = "string",
          value = "%H:%M:%S",
@@ -164,31 +171,49 @@ function print(msg, param)
    w.print("", prefix .. "\t" .. msg)
 end
 
-function init_config()
-   local first_run, total_cmd = true, 0
-   for name, info in pairs(g.defaults) do
-      local value
-      if w.config_is_set_plugin(name) == 0 then
-         if info.type == "boolean" then
+function get_or_set_option(name, info, value)
+   if not value then
+      if w.config_is_set_plugin(name) ~= 1 then
+         if info.type == "list" then
+            value = string.lower(table.concat(info.value, ","))
+         elseif info.type == "boolean" then
             value = info.value and 1 or 0
+         elseif info.type == "number" then
+            value = info.value
          else
             value = w.string_eval_expression(info.value, {}, {}, {})
          end
          w.config_set_plugin(name, value)
-         if info.description and info.description ~= "" then
+         if info.description then
             w.config_set_desc_plugin(name, info.description)
          end
+         return (info.type == "list" and info.value or value), true
       else
-         first_run = false
          value = w.config_get_plugin(name)
       end
-      if info.type == "number" or info.type == "boolean" then
-         value = tonumber(value)
-         if info.type == "boolean" then
-            value = value ~= 0
-         end
+   end
+   if info.type == "list" then
+      local list = {}
+      for item in value:gmatch("([^,]+)") do
+         table.insert(list, item:lower())
       end
-      g.config[name] = value
+      value = list
+   elseif info.type == "boolean" or info.type == "number" then
+      value = tonumber(value)
+      if info.type == "boolean" then
+         value = value and value ~= 0
+      end
+   end
+   return value, false
+end
+
+function init_config()
+   local total_cmd, not_set, first_run = 0
+   for name, info in pairs(g.defaults) do
+      g.config[name], not_set = get_or_set_option(name, info)
+      if first_run == nil and not_set then
+         first_run = true
+      end
    end
 
    local prefix = "plugins.var.lua." .. g.script.name .. ".cmd."
@@ -274,7 +299,8 @@ function setup_hooks()
          <key>: A single digit character (0-9) or one lowercase alphabet (a-z).
      <command>: Weechat command. The following variables will be replaced with
                 their corresponding values from the currently selected URL:
-                ${url}, ${nick}, ${time}, ${message}, ${index}.
+                ${url}, ${nick}, ${time}, ${message}, ${index}, ${buffer_name},
+                ${buffer_full_name}, ${buffer_short_name}, ${buffer_number}
 
 The following actions are only available when the selection bar is active and
 already bound to keys (see KEY BINDINGS below). You'll never need to use these
@@ -352,6 +378,21 @@ function new_line_cb(buffer, evbuf, date, tags, displayed, highlighted, prefix, 
          end
       elseif buffer ~= evbuf then
          return
+      end
+
+      if g.config.tags and #g.config.tags > 0 then
+         tags = "," .. tags .. ","
+         local found_match = false
+         for _, tag in ipairs(g.config.tags) do
+            local p = tags:find("," .. tag:lower() .. ",", 1, true)
+            if not found_match and p then
+               found_match = true
+               break
+            end
+         end
+         if not found_match then
+            return
+         end
       end
 
       local data, indexes = {}, {}
@@ -707,6 +748,20 @@ function collect_urls_via_infolist(buffer)
    local get_info_from_current_line = function ()
       local info, tags = {}
       info.nick, tags = extract_nick_from_tags(w.infolist_string(buf_lines, "tags"))
+      if g.config.tags and #g.config.tags > 0 then
+         tags = tags:lower()
+         local found_match = false
+         for _, tag in ipairs(g.config.tags) do
+            local p = tags:find("," .. tag .. ",", 1, true)
+            if not found_match and p then
+               found_match = true
+               break
+            end
+         end
+         if not found_match then
+            return
+         end
+      end
       info.prefix = w.string_remove_color(w.infolist_string(buf_lines, "prefix"), "")
       if tags:match(",logger_backlog,") then
          info.prefix = "backlog: " .. info.prefix
@@ -723,7 +778,9 @@ function collect_urls_via_infolist(buffer)
    while w.infolist_next(buf_lines) == 1 do
       if w.infolist_integer(buf_lines, "displayed") == 1 then
          info = get_info_from_current_line()
-         process_urls_in_message(info.message, add_cb)
+         if info then
+            process_urls_in_message(info.message, add_cb)
+         end
       end
    end
    w.infolist_free(buf_lines)
@@ -753,7 +810,39 @@ function collect_urls_via_hdata(mixed_lines)
    end
 
    local get_info_from_current_line = function (data)
-      local info = {}
+      local info, tags = {}
+
+      info.prefix = w.hdata_string(h_line_data, data, "prefix")
+
+      local tag_required = (g.config.tags and #g.config.tags > 0)
+      local tag_count = w.hdata_get_var_array_size(h_line_data, data, "tags_array")
+      if tag_required then
+         if not tag_count or tag_count < 1 then
+            return
+         end
+         tags = "," .. string.lower(table.concat(g.config.tags, ",")) .. ","
+      end
+
+      if tag_count > 0 then
+         local found_match = false
+         for i = 0, tag_count - 1 do
+            local tag = w.hdata_string(h_line_data, data, i .. "|tags_array")
+            if tag:sub(1, 5) == "nick_" then
+               info.nick = tag:sub(6)
+            elseif tag == "logger_backlog" then
+               info.prefix = "backlog: " .. info.prefix
+            end
+            if tag_required and not found_match then
+               local p = tags:find("," .. tag:lower() .. ",", 1, true)
+               if p then
+                  found_match = true
+               end
+            end
+         end
+         if tag_required and not found_match then
+            return
+         end
+      end
 
       local buffer = w.hdata_pointer(h_line_data, data, "buffer")
       info.buffer_full_name = w.hdata_string(h_buf, buffer, "full_name")
@@ -761,22 +850,11 @@ function collect_urls_via_hdata(mixed_lines)
       info.buffer_short_name = w.hdata_string(h_buf, buffer, "short_name")
       info.buffer_number = w.hdata_integer(h_buf, buffer, "number")
 
+      info.prefix = w.string_remove_color(info.prefix, "")
       info.highlighted = w.hdata_char(h_line_data, data, "highlighted")
-      info.prefix = w.string_remove_color(w.hdata_string(h_line_data, data, "prefix"), "")
       info.message = w.hdata_string(h_line_data, data, "message")
       info.time = tonumber(w.hdata_time(h_line_data, data, "date") or 0)
 
-      local tag_count = w.hdata_get_var_array_size(h_line_data, data, "tags_array")
-      if tag_count > 0 then
-         for i = 0, tag_count do
-            local tag = w.hdata_string(h_line_data, data, i .. "|tags_array")
-            if tag:sub(1, 5) == "nick_" then
-               info.nick = tag:sub(6)
-            elseif tag == "logger_backlog" then
-               info.prefix = "backlog: " .. info.prefix
-            end
-         end
-      end
       return info
    end
 
@@ -786,7 +864,9 @@ function collect_urls_via_hdata(mixed_lines)
          local displayed = w.hdata_char(h_line_data, data, "displayed")
          if displayed == 1 then
             info = get_info_from_current_line(data)
-            process_urls_in_message(info.message, add_cb)
+            if info then
+               process_urls_in_message(info.message, add_cb)
+            end
          end
       end
       line = w.hdata_move(h_line, line, 1)
@@ -974,14 +1054,7 @@ function config_cb(_, opt_name, opt_value)
    local name = opt_name:sub(#prefix + 1)
 
    if g.defaults[name] then
-      local info = g.defaults[name]
-      if info.type == "number" or info.type == "boolean" then
-         opt_value = tonumber(opt_value)
-         if info.type == "boolean" then
-            opt_value = opt_value ~= 0
-         end
-      end
-      g.config[name] = opt_value
+      g.config[name] = get_or_set_option(name, g.defaults[name], opt_value)
    elseif name:sub(1, 4) == "cmd." then
       set_custom_command(name:sub(5), opt_value)
    elseif name:sub(1, 6) == "label." then
