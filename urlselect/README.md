@@ -50,7 +50,7 @@ Two custom commands are already set by default. `o` for xdg-open and `i` for
 inserting the URL into input bar. You can unbind these keys or set it into
 something else with the above commands.
 
-To see a list of available custom commands, you can press Tab while the URL
+To see a list of available custom commands, you can press F1 while the URL
 selection bar is active. You can also use `/urlselect list-commands` anywhere
 else on Weechat.
 
