@@ -46,8 +46,9 @@ To remove a custom command, simply unbind its key:
 
     /urlselect unbind <key>
 
-Two custom commands are already set by default (1 and 2). You can unbind these
-keys or set it into something else with the above commands.
+Two custom commands are already set by default. `o` for xdg-open and `i` for
+inserting the URL into input bar. You can unbind these keys or set it into
+something else with the above commands.
 
 To see a list of available custom commands, you can press Tab while the URL
 selection bar is active. You can also use `/urlselect list-commands` anywhere
@@ -96,7 +97,8 @@ The list of bar items are:
 
 This script can send a hsignal `urlselect_current` when you press Ctrl-S. The
 hashtable sent with the signal has the following fields: `url`, `index`, `time`,
-`message`, and `nick`.
+`message`, `nick`, `buffer_number`, `buffer_name`, `buffer_full_name`,
+and `buffer_short_name`.
 
 
 
@@ -111,7 +113,9 @@ messages with any of these tags (default:
 ##### plugins.var.lua.urlselect.scan_merged_buffers
 
 Collect URLs from all buffers that are merged with the current one. Set to `1`
-for yes and `0` for no (default: `0`).
+for yes and `0` for no (default: `0`). You can override this setting by calling
+`/urlselect activate <mode>`, where `<mode>` is either `current` (scan current
+buffer only) or `merged` (scan all buffers merged with the current one).
 
 ##### plugins.var.lua.urlselect.status_timeout
 

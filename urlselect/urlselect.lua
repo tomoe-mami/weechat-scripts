@@ -282,10 +282,10 @@ function setup_hooks()
    w.hook_command(
       g.script.name,
       "Control urlselect script",
-      "[activate] " ..
+      "[activate [current|merged]] " ..
       "|| bind <key> <command> " ..
-      "|| label <key> [custom label] " ..
-      "|| unbind <key> " ..
+      "|| label <key> [<custom label>] " ..
+      "|| unbind <key> [<key> ...]" ..
       "|| list-commands " ..
       "|| deactivate " ..
       "|| navigate <direction> " ..
@@ -293,7 +293,9 @@ function setup_hooks()
       "|| hsignal " ..
       "|| help",
 [[
-      activate: Activate the URL selection bar (default action).
+      activate: Activate the URL selection bar (default action). The optional
+                parameter `current` and `merged` can be used to force script to
+                scan only on current buffer or all currently merged buffers.
           bind: Bind a key to a Weechat command.
         unbind: Unbind key.
  list-commands: List all custom commands and their keys.
@@ -426,7 +428,18 @@ end
 
 function cmd_action_activate(buffer, args)
    if not g.active then
-      g.list = collect_urls(buffer)
+      g.scan_mode = nil
+      if args then
+         g.scan_mode = args:match("([^%s]*)")
+         if g.scan_mode ~= "current" and g.scan_mode ~= "merged" then
+            g.scan_mode = nil
+         end
+      end
+      if not g.scan_mode then
+         g.scan_mode = g.config.scan_merged_buffers and "merged" or "current"
+      end
+
+      g.list = collect_urls(buffer, g.scan_mode)
       if g.list and g.list ~= "" then
 
          g.hooks.switch = w.hook_signal(
@@ -714,17 +727,20 @@ function convert_datetime_into_timestamp(time_string)
 end
 
 
-function collect_urls(buffer)
-   if g.config.scan_merged_buffers then
+function collect_urls(buffer, mode)
+   if mode == "current" then
+      return collect_urls_via_infolist(buffer)
+   else
       local mixed_lines = w.hdata_pointer(
          w.hdata_get("buffer"),
          buffer,
          "mixed_lines")
       if mixed_lines and mixed_lines ~= "" then
          return collect_urls_via_hdata(mixed_lines)
+      else
+         return collect_urls_via_infolist(buffer)
       end
    end
-   return collect_urls_via_infolist(buffer)
 end
 
 function collect_urls_via_infolist(buffer)
