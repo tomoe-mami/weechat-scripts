@@ -284,6 +284,7 @@ function setup_hooks()
       "Control urlselect script",
       "[activate] " ..
       "|| bind <key> <command> " ..
+      "|| label <key> [custom label] " ..
       "|| unbind <key> " ..
       "|| list-commands " ..
       "|| deactivate " ..
@@ -462,6 +463,7 @@ function cmd_action_deactivate(buffer)
       set_bar("main", false)
       set_bar("help", false)
       set_keys(buffer, false)
+      set_status()
       if g.list and g.list ~= "" then
          w.infolist_free(g.list)
          g.list = nil
