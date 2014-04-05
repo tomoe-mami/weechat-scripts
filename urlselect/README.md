@@ -14,13 +14,21 @@ available key bindings*
 ### Usage
 
 Simply run `/urlselect` to activate URL selection bar. You can use
-arrow keys to navigate between URLs. Press F1 to see the list of keys and custom
-commands (see **Custom Commands** below). It's recommended to bind `/urlselect`
-to a key so it can be easily activated. For example, to use Alt+Enter run the
-following command in Weechat:
+up/down arrow keys to navigate between URLs. Press F1 to see the list of keys
+and custom commands (see **Custom Commands** below). It's recommended to bind
+`/urlselect` to a key so it can be easily activated. For example, to use
+Alt-Enter run the following command in Weechat:
 
     /key bind meta-ctrl-M /urlselect
 
+
+### Search
+
+You can enable the search feature by pressing Ctrl-F. Another bar will appear
+where you can input a keyword. By default, script will search the first matching
+entry from the current position and move backward until the first entry. To
+change the search direction simply press up/down arrow key. You can change the
+search scope by pressing Tab.
 
 
 ### Custom Commands
@@ -36,7 +44,7 @@ You can use the following variables inside a command: `${url}`, `${time}`,
 `${buffer_short_name}`, and `${buffer_number}`. They will be replaced by their
 actual values from the currently selected URL.
 
-For example, to bind Alt-v to view the raw content of a URL inside Weechat you
+For example, to bind Alt-V to view the raw content of a URL inside Weechat you
 can use:
 
     /urlselect bind v /exec -noln -nf url:${url}
@@ -99,6 +107,37 @@ This script can send a hsignal `urlselect_current` when you press Ctrl-S. The
 hashtable sent with the signal has the following fields: `url`, `index`, `time`,
 `message`, `nick`, `buffer_number`, `buffer_name`, `buffer_full_name`,
 and `buffer_short_name`.
+
+
+
+### Key Bindings
+
+##### Keys on normal mode
+
+Key         | Action
+------------|--------------------------------------------------------------------
+Ctrl-C      | Close the URL selection bar
+Ctrl-F      | Toggle search bar
+Up          | Select previous URL
+Down        | Select next URL
+Home        | Select the first (oldest) URL
+End         | Select the last (newest) URL
+Ctrl-P      | Select previous URL that contains highlight
+Ctrl-N      | Select next URL that contains highlight
+Ctrl-S      | Sends HSignal
+
+##### Keys on search mode
+
+Key         | Action
+------------|--------------------------------------------------------------------
+Up          | Select previous matching entry
+Down        | Select next matching entry
+Tab         | Switch to next search scope
+Shift-Tab   | Switch to previous search scope
+Ctrl-N      | Change search scope to nickname only
+Ctrl-T      | Change search scope to message/text only
+Ctrl-U      | Change search scope to URL only
+Ctrl-B      | Change search scope to bot nickname and message
 
 
 
@@ -186,3 +225,5 @@ Color for buffer name (default: `green`)
 
 These are for custom commands. Use `/urlselect bind` and `/urlselect unbind` to
 modify these options.
+
+

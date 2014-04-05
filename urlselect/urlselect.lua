@@ -96,6 +96,25 @@ local g = {
          type = "string",
          value = "black,green",
          description = "Color for status notification"
+      },
+      search_mode = {
+         type = "string",
+         value = "url",
+         valid_values = {
+            url = true, msg = true,
+            nick = true, ["nick+msg"] = true
+         },
+         description = "Default search mode. Valid values are: url, msg, nick or nick+msg"
+      },
+      search_prompt_color = {
+         type = "string",
+         value = "default",
+         description = "Color for search prompt"
+      },
+      search_mode_color = {
+         type = "string",
+         value = "green",
+         description = "Color for current search mode"
       }
    },
    config = {},
@@ -103,32 +122,53 @@ local g = {
    list = "",
    bar_items = { 
       list = {"index", "nick", "url", "time", "message", "buffer_name", "buffer_number"},
-      extra = { "title", "help", "status"}
+      extra = { "title", "help", "status", "search"}
    },
    custom_commands = {},
    hooks = {},
    current_status = "",
    enable_help = false,
-   last_index = 0
+   last_index = 0,
+   enable_search = false,
+   search_mode = 1,
+   search_modes = {"url", "msg", "nick", "nick+msg"}
 }
 
 g.bar = {
    main = { name = g.script.name },
+   search = { name = g.script.name .. "_search" },
    help = { name = g.script.name .. "_help" }
 }
 
 g.keys = {
-      ["meta2-B"] = "navigate next",
-      ["meta2-A"] = "navigate previous",
-     ["meta2-1~"] = "navigate last",
-     ["meta2-4~"] = "navigate first",
-       ["ctrl-P"] = "navigate previous-highlight",
-       ["ctrl-N"] = "navigate next-highlight",
-       ["ctrl-S"] = "hsignal",
-       ["ctrl-C"] = "deactivate",
-      ["meta-OP"] = "help",
-    ["meta2-11~"] = "help"
+   normal = {
+      ["meta2-B"]    = "navigate next",
+      ["meta2-A"]    = "navigate previous",
+      ["meta2-1~"]   = "navigate last",
+      ["meta2-4~"]   = "navigate first",
+      ["ctrl-P"]     = "navigate previous-highlight",
+      ["ctrl-N"]     = "navigate next-highlight",
+      ["ctrl-S"]     = "hsignal",
+      ["ctrl-C"]     = "deactivate",
+      ["ctrl-F"]     = "search",
+      ["meta-OP"]    = "help",
+      ["meta2-11~"]  = "help"
+    },
+   search = {
+      ["ctrl-I"]     = "search-mode next",
+      ["meta2-Z"]    = "search-mode previous",
+      ["ctrl-N"]     = "search-mode nick",
+      ["ctrl-T"]     = "search-mode msg",
+      ["ctrl-U"]     = "search-mode url",
+      ["ctrl-B"]     = "search-mode nick+msg"
+   }
 }
+
+function unload_cb()
+   if g.search_mode and g.search_modes[g.search_mode] then
+      w.config_set_plugin("search_mode", g.search_modes[g.search_mode])
+   end
+end
 
 function setup()
    assert(
@@ -138,7 +178,7 @@ function setup()
          g.script.version,
          g.script.license,
          g.script.description,
-         "", ""),
+         "unload_cb", ""),
       "Unable to register script. Perhaps it's already loaded before?")
 
    local wee_ver = tonumber(w.info_get("version_number", "") or 0)
@@ -154,6 +194,10 @@ function setup()
       w.config_set_plugin("cmd.i", "/input insert ${url}\\x20")
    end
    setup_bar()
+
+   if g.config.search_mode then
+      cmd_action_search_mode(nil, g.config.search_mode)
+   end
 end
 
 function print(msg, param)
@@ -198,6 +242,10 @@ function get_or_set_option(name, info, value)
          table.insert(list, item:lower())
       end
       value = list
+   elseif info.type == "string" and info.valid_values then
+      if not info.valid_values[value] then
+         value = info.value
+      end
    elseif info.type == "boolean" or info.type == "number" then
       value = tonumber(value)
       if info.type == "boolean" then
@@ -340,10 +388,10 @@ KEY BINDINGS
       "")
 end
 
-function set_keys(buffer, flag)
+function set_keys(buffer, key_type, flag)
    local prefix = flag and "key_bind_" or "key_unbind_"
    local cmd
-   for key, val in pairs(g.keys) do
+   for key, val in pairs(g.keys[key_type]) do
       if not flag then
          cmd = ""
       elseif val:sub(1, 1) == "/" then
@@ -371,6 +419,16 @@ function extract_nick_from_tags(tags)
    return nick, tags
 end
 
+function find_tag(tag_string, tag_list)
+   tag_string = "," .. tag_string:lower() .. ","
+   for _, tag in ipairs(tag_list) do
+      local p = tag_string:find("," .. tag:lower() .. ",", 1, true)
+      if p then
+         return tag
+      end
+   end
+end
+
 function new_line_cb(buffer, evbuf, date, tags, displayed, highlighted, prefix, message)
    if displayed == "1" and g.list and g.list ~= "" then
       if g.config.scan_merged_buffers then
@@ -383,19 +441,10 @@ function new_line_cb(buffer, evbuf, date, tags, displayed, highlighted, prefix, 
          return
       end
 
-      if g.config.tags and #g.config.tags > 0 then
-         tags = "," .. tags .. ","
-         local found_match = false
-         for _, tag in ipairs(g.config.tags) do
-            local p = tags:find("," .. tag:lower() .. ",", 1, true)
-            if not found_match and p then
-               found_match = true
-               break
-            end
-         end
-         if not found_match then
-            return
-         end
+      if g.config.tags and
+         #g.config.tags > 0 and
+         not find_tag(tags, g.config.tags) then
+         return
       end
 
       local data, indexes = {}, {}
@@ -461,7 +510,7 @@ function cmd_action_activate(buffer, args)
          g.active = true
          set_bar("main", true)
          cmd_action_navigate(buffer, "previous")
-         set_keys(buffer, true)
+         set_keys(buffer, "normal", true)
          w.bar_item_update(g.script.name .. "_title")
       end
    else
@@ -475,7 +524,8 @@ function cmd_action_deactivate(buffer)
       g.active, g.enable_help, g.last_index = false, false, 0
       set_bar("main", false)
       set_bar("help", false)
-      set_keys(buffer, false)
+      deactivate_search(buffer)
+      set_keys(buffer, "normal", false)
       set_status()
       if g.list and g.list ~= "" then
          w.infolist_free(g.list)
@@ -534,18 +584,221 @@ function move_cursor_highlight(list, dir)
    return false
 end
 
-function cmd_action_navigate(buffer, args)
+function search_check_current_entry(list, keyword)
+   keyword = keyword:lower()
+   local check_msg = function ()
+      local msg = w.string_remove_color(w.infolist_string(list, "message"), "")
+      return msg:lower():find(keyword, 1, true)
+   end
+
+   local check_nick = function ()
+      local nick = w.infolist_string(list, "nick")
+      return nick:lower():find(keyword, 1, true)
+   end
+
+   local check_url = function ()
+      local url = w.infolist_string(list, "url")
+      return url:lower():find(keyword, 1, true)
+   end
+
+   if g.search_mode == 1 then
+      return check_url()
+   elseif g.search_mode == 2 then
+      return check_msg()
+   elseif g.search_mode == 3 then
+      return check_nick()
+   elseif g.search_mode == 4 then
+      local r = check_msg()
+      if not r then
+         r = check_nick()
+      end
+      return r
+   end
+end
+
+function move_cursor_search(list, keyword, dir)
+   local func, alt
+   if dir == "next" then
+      func = w.infolist_next
+      alt = w.infolist_prev
+   elseif dir == "previous" then
+      func = w.infolist_prev
+      alt = w.infolist_next
+   else
+      return false
+   end
+   local index = w.infolist_integer(list, "index")
+   while func(list) == 1 do
+      if search_check_current_entry(list, keyword) then
+         return true
+      end
+   end
+   while alt(list) == 1 do
+      if w.infolist_integer(list, "index") == index then
+         break
+      end
+   end
+   local msg
+   if dir == "previous" then
+      msg = "Reached start of list."
+   else
+      msg = "Reached end of list."
+   end
+   set_status(msg .. " No URL found.")
+   return false
+end
+
+function cmd_action_navigate(buffer, args, keyword)
    if g.active and g.list and g.list ~= "" then
       if args == "next" or
          args == "previous" or
          args == "first" or
          args == "last" then
-         move_cursor_normal(g.list, args)
+         if g.enable_search and (args == "next" or args == "previous") then
+            if not keyword then
+               keyword = w.buffer_get_string(buffer, "input")
+            end
+            if not keyword or keyword == "" then
+               move_cursor_normal(g.list, args)
+            else
+               move_cursor_search(g.list, keyword, args)
+            end
+         else
+            move_cursor_normal(g.list, args)
+         end
       elseif args == "next-highlight" or
          args == "previous-highlight" then
          move_cursor_highlight(g.list, args)
       end
       update_list_items()
+   end
+   return w.WEECHAT_RC_OK
+end
+
+function set_all_input_bars(flag)
+   if flag then
+      if g._forced_bar and #g._forced_bar > 0 then
+         for _, name in ipairs(g._forced_bar) do
+            w.bar_set(w.bar_search(name), "hidden", "off")
+         end
+         g._forced_bar = nil
+      end
+   else
+      local list = w.infolist_get("bar", "", "")
+      if list and list ~= "" then
+         g._forced_bar = {}
+         while w.infolist_next(list) == 1 do
+            local name = w.infolist_string(list, "name")
+            local hidden = w.infolist_integer(list, "hidden")
+            local items = w.infolist_string(list, "items") or ""
+            items = "," .. items:gsub("[^_%w]+", ",") .. ","
+            if name ~= g.bar.main.name and
+               name ~= g.bar.search.name and
+               name ~= g.bar.help.name and
+               items:match(",input_text,") and
+               hidden == 0 then
+               w.bar_set(w.bar_search(name), "hidden", "on")
+               table.insert(g._forced_bar, name)
+            end
+         end
+         w.infolist_free(list)
+      end
+   end
+end
+
+function search_input_cb(buffer, _, evbuffer)
+   if buffer == evbuffer then
+      local keyword = w.buffer_get_string(buffer, "input")
+      if not search_check_current_entry(g.list, keyword) then
+         cmd_action_navigate(buffer, "previous", keyword)
+      end
+   end
+   return w.WEECHAT_RC_OK
+end
+
+function enter_cb()
+   return w.WEECHAT_RC_OK_EAT
+end
+
+function activate_search(buffer)
+   g.enable_search = true
+   set_all_input_bars(false)
+   set_bar("search", true)
+   g._original_input_text = w.buffer_get_string(buffer, "input")
+   g._original_input_pos = w.buffer_get_integer(buffer, "input_pos")
+   w.buffer_set(buffer, "input", "")
+   g.hooks.enter = w.hook_command_run("/input return", "enter_cb", "")
+   g.hooks.search = w.hook_signal("input_text_changed", "search_input_cb", buffer)
+   set_keys(buffer, "search", true)
+end
+
+function deactivate_search(buffer)
+   g.enable_search = false
+   set_bar("search", false)
+   set_all_input_bars(true)
+   set_keys(buffer, "search", false)
+   if g.hooks.enter then
+      w.unhook(g.hooks.enter)
+      g.hooks.enter = nil
+   end
+   if g.hooks.search then
+      w.unhook(g.hooks.search)
+      g.hooks.search = nil
+   end
+   if g._original_input_text then
+      w.buffer_set(buffer, "input", g._original_input_text)
+      w.buffer_set(buffer, "input_pos", g._original_input_pos or 0)
+      g._original_input_text = nil
+      g._original_input_pos = nil
+   end
+end
+
+function cmd_action_search(buffer, args)
+   if g.active and g.list and g.list ~= "" then
+      if not g.enable_search then
+         activate_search(buffer)
+      else
+         deactivate_search(buffer)
+      end
+   end
+   return w.WEECHAT_RC_OK
+end
+
+function cmd_action_search_mode(buffer, args)
+   if not g.search_mode then
+      return
+   end
+   if args == "next" then
+      if g.search_mode == #g.search_modes then
+         g.search_mode = 1
+      else
+         g.search_mode = g.search_mode + 1
+      end
+   elseif args == "previous" then
+      if g.search_mode == 1 then
+         g.search_mode = #g.search_modes
+      else
+         g.search_mode = g.search_mode - 1
+      end
+   else
+      local found_mode
+      for i, name in ipairs(g.search_modes) do
+         if name == args then
+            g.search_mode = i
+            found_mode = true
+            break
+         end
+      end
+      if not found_mode then
+         print("Unknown mode: ${color:bold}${mode}${color:-bold}. " ..
+               "See ${color:bold}/help ${script_name}${color:-bold} for usage info.",
+               { mode = args, prefix_type = "error"})
+         return w.WEECHAT_RC_OK
+      end
+   end
+   w.bar_item_update(g.script.name .. "_search")
+   if buffer then
+      search_input_cb(buffer, _, buffer)
    end
    return w.WEECHAT_RC_OK
 end
@@ -648,6 +901,8 @@ function command_cb(_, buffer, param)
       run               = cmd_action_run,
       hsignal           = cmd_action_hsignal,
       help              = cmd_action_help,
+      search            = cmd_action_search,
+      ["search-mode"]   = cmd_action_search_mode,
       ["list-commands"] = cmd_action_list_commands
    }
 
@@ -766,22 +1021,14 @@ function collect_urls_via_infolist(buffer)
    end
 
    local get_info_from_current_line = function ()
-      local info, tags = {}
-      info.nick, tags = extract_nick_from_tags(w.infolist_string(buf_lines, "tags"))
-      if g.config.tags and #g.config.tags > 0 then
-         tags = tags:lower()
-         local found_match = false
-         for _, tag in ipairs(g.config.tags) do
-            local p = tags:find("," .. tag .. ",", 1, true)
-            if not found_match and p then
-               found_match = true
-               break
-            end
-         end
-         if not found_match then
-            return
-         end
+      local info = {}
+      local tags = w.infolist_string(buf_lines, "tags")
+      if g.config.tags and
+         #g.config.tags > 0 and
+         not find_tag(tags, g.config.tags) then
+         return
       end
+      info.nick, tags = extract_nick_from_tags(tags)
       info.prefix = w.string_remove_color(w.infolist_string(buf_lines, "prefix"), "")
       if tags:match(",logger_backlog,") then
          info.prefix = "backlog: " .. info.prefix
@@ -1000,6 +1247,7 @@ function item_help_cb()
 
       local help_text = w.string_eval_expression([[
 ${kc}<ctrl-c>${hc} close
+${kc}<ctrl-f>${hc} search
 ${kc}<up>${hc} prev
 ${kc}<down>${hc} next
 ${kc}<home>${hc} first
@@ -1032,6 +1280,22 @@ ${kc}<ctrl-s>${hc} send hsignal
          end
       end
       return help_text
+   end
+end
+
+function item_search_cb()
+   if not g.enable_search then
+      return ""
+   else
+      local param = {
+         pc = w.color(g.config.search_prompt_color),
+         mc = w.color(g.config.search_mode_color),
+         mode = g.search_modes[g.search_mode]
+      }
+
+      return w.string_eval_expression(
+         "${pc}search (${mc}${mode}${pc}) >",
+         {}, param, {})
    end
 end
 
@@ -1100,8 +1364,14 @@ function setup_bar()
             "[${s}_title],#${s}_index,[${s}_buffer_name],<${s}_nick>,${s}_message,${s}_status",
             {}, { s = g.script.name }, {})
       },
-      help = {
+      search = {
          priority = 2999,
+         filling_tb = "horizontal",
+         max_size = 1,
+         items = g.script.name .. "_search,input_text"
+      },
+      help = {
+         priority = 2998,
          filling_tb = "columns_horizontal",
          max_size = 6,
          items = g.script.name .. "_help"
