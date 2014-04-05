@@ -97,24 +97,24 @@ local g = {
          value = "black,green",
          description = "Color for status notification"
       },
-      search_mode = {
+      search_scope = {
          type = "string",
          value = "url",
          valid_values = {
             url = true, msg = true,
             nick = true, ["nick+msg"] = true
          },
-         description = "Default search mode. Valid values are: url, msg, nick or nick+msg"
+         description = "Default search scope. Valid values are: url, msg, nick or nick+msg"
       },
       search_prompt_color = {
          type = "string",
          value = "default",
          description = "Color for search prompt"
       },
-      search_mode_color = {
+      search_scope_color = {
          type = "string",
          value = "green",
-         description = "Color for current search mode"
+         description = "Color for current search scope"
       }
    },
    config = {},
@@ -130,8 +130,8 @@ local g = {
    enable_help = false,
    last_index = 0,
    enable_search = false,
-   search_mode = 1,
-   search_modes = {"url", "msg", "nick", "nick+msg"}
+   search_scope = 1,
+   scope_list = {"url", "msg", "nick", "nick+msg"}
 }
 
 g.bar = {
@@ -155,18 +155,18 @@ g.keys = {
       ["meta2-11~"]  = "help"
     },
    search = {
-      ["ctrl-I"]     = "search-mode next",
-      ["meta2-Z"]    = "search-mode previous",
-      ["ctrl-N"]     = "search-mode nick",
-      ["ctrl-T"]     = "search-mode msg",
-      ["ctrl-U"]     = "search-mode url",
-      ["ctrl-B"]     = "search-mode nick+msg"
+      ["ctrl-I"]     = "scope next",
+      ["meta2-Z"]    = "scope previous",
+      ["ctrl-N"]     = "scope nick",
+      ["ctrl-T"]     = "scope msg",
+      ["ctrl-U"]     = "scope url",
+      ["ctrl-B"]     = "scope nick+msg"
    }
 }
 
 function unload_cb()
-   if g.search_mode and g.search_modes[g.search_mode] then
-      w.config_set_plugin("search_mode", g.search_modes[g.search_mode])
+   if g.search_scope and g.scope_list[g.search_scope] then
+      w.config_set_plugin("search_scope", g.scope_list[g.search_scope])
    end
 end
 
@@ -195,8 +195,8 @@ function setup()
    end
    setup_bar()
 
-   if g.config.search_mode then
-      cmd_action_search_mode(nil, g.config.search_mode)
+   if g.config.search_scope then
+      cmd_action_search_scope(nil, g.config.search_scope)
    end
 end
 
@@ -297,13 +297,13 @@ function set_custom_command(key, cmd, label, silent)
    else
       local key_code = "meta-" .. key
       if not cmd or cmd == "" then
-         if g.keys[key_code] then g.keys[key_code] = nil end
+         if g.keys.normal[key_code] then g.keys.normal[key_code] = nil end
          if g.custom_commands[key] then g.custom_commands[key] = nil end
          if not silent then
             print("Key ${color:bold}${key}${color:-bold} removed", { key = key })
          end
       else
-         g.keys[key_code] = "run " .. key
+         g.keys.normal[key_code] = "run " .. key
          g.custom_commands[key] = { command = cmd }
          if label and label ~= "" then
             g.custom_commands[key].label = label
@@ -338,6 +338,8 @@ function setup_hooks()
       "|| deactivate " ..
       "|| navigate <direction> " ..
       "|| run <key> " ..
+      "|| search " ..
+      "|| scope <new-scope> " ..
       "|| hsignal " ..
       "|| help",
 [[
@@ -360,9 +362,13 @@ manually:
     deactivate: Deactivate URL selection bar.
       navigate: Navigate within the list of URLs.
            run: Run the command bound to a key.
+        search: Toggle search bar.
+         scope: Change search scope.
        hsignal: Send a "urlselect_current" hsignal with data from currently
                 selected URL.
           help: Toggle help bar.
+   <new-scope>: New search scope. Valid values are: next, previous, url, nick,
+                msg, nick+msg
    <direction>: Direction of movement.
                 Valid values are: next, previous, first, last,
                 next-highlight, previous-highlight.
@@ -370,6 +376,7 @@ manually:
 KEY BINDINGS
 --------------------------------------------------------------
        Ctrl-C: Close/deactivate URL selection bar.
+       Ctrl-F: Toggle search bar
            Up: Move to previous (older) URL.
          Down: Move to next (newer) URL.
          Home: Move to oldest URL.
@@ -383,7 +390,7 @@ KEY BINDINGS
 ]],
       "activate || bind || unbind || list-commands || deactivate || run || " ..
       "navigate next|previous|first|last|previous-highlight|next-highlight || " ..
-      "help",
+      "search || scope next|previous|url|nick|msg|nick+msg || help",
       "command_cb",
       "")
 end
@@ -601,13 +608,13 @@ function search_check_current_entry(list, keyword)
       return url:lower():find(keyword, 1, true)
    end
 
-   if g.search_mode == 1 then
+   if g.search_scope == 1 then
       return check_url()
-   elseif g.search_mode == 2 then
+   elseif g.search_scope == 2 then
       return check_msg()
-   elseif g.search_mode == 3 then
+   elseif g.search_scope == 3 then
       return check_nick()
-   elseif g.search_mode == 4 then
+   elseif g.search_scope == 4 then
       local r = check_msg()
       if not r then
          r = check_nick()
@@ -764,35 +771,35 @@ function cmd_action_search(buffer, args)
    return w.WEECHAT_RC_OK
 end
 
-function cmd_action_search_mode(buffer, args)
-   if not g.search_mode then
+function cmd_action_search_scope(buffer, args)
+   if not g.search_scope then
       return
    end
    if args == "next" then
-      if g.search_mode == #g.search_modes then
-         g.search_mode = 1
+      if g.search_scope == #g.scope_list then
+         g.search_scope = 1
       else
-         g.search_mode = g.search_mode + 1
+         g.search_scope = g.search_scope + 1
       end
    elseif args == "previous" then
-      if g.search_mode == 1 then
-         g.search_mode = #g.search_modes
+      if g.search_scope == 1 then
+         g.search_scope = #g.scope_list
       else
-         g.search_mode = g.search_mode - 1
+         g.search_scope = g.search_scope - 1
       end
    else
-      local found_mode
-      for i, name in ipairs(g.search_modes) do
+      local found_scope
+      for i, name in ipairs(g.scope_list) do
          if name == args then
-            g.search_mode = i
-            found_mode = true
+            g.search_scope = i
+            found_scope = true
             break
          end
       end
-      if not found_mode then
-         print("Unknown mode: ${color:bold}${mode}${color:-bold}. " ..
+      if not found_scope then
+         print("Unknown scope: ${color:bold}${scope}${color:-bold}. " ..
                "See ${color:bold}/help ${script_name}${color:-bold} for usage info.",
-               { mode = args, prefix_type = "error"})
+               { scope = args, prefix_type = "error"})
          return w.WEECHAT_RC_OK
       end
    end
@@ -902,7 +909,7 @@ function command_cb(_, buffer, param)
       hsignal           = cmd_action_hsignal,
       help              = cmd_action_help,
       search            = cmd_action_search,
-      ["search-mode"]   = cmd_action_search_mode,
+      scope             = cmd_action_search_scope,
       ["list-commands"] = cmd_action_list_commands
    }
 
@@ -1289,12 +1296,12 @@ function item_search_cb()
    else
       local param = {
          pc = w.color(g.config.search_prompt_color),
-         mc = w.color(g.config.search_mode_color),
-         mode = g.search_modes[g.search_mode]
+         mc = w.color(g.config.search_scope_color),
+         scope = g.scope_list[g.search_scope]
       }
 
       return w.string_eval_expression(
-         "${pc}search (${mc}${mode}${pc}) >",
+         "${pc}search (${mc}${scope}${pc}) >",
          {}, param, {})
    end
 end
