@@ -576,16 +576,15 @@ function move_cursor_highlight(list, dir)
       return false
    end
 
-   local index = w.infolist_integer(list, "index")
+   local steps = 0
    while func(list) == 1 do
+      steps = steps + 1
       if w.infolist_integer(list, "highlighted") == 1 then
          return true
       end
    end
-   while alt(list) == 1 do
-      if w.infolist_integer(list, "index") == index then
-         break
-      end
+   for i = 0, steps do
+      alt(list)
    end
    set_status("No URL with highlight found")
    return false
@@ -634,16 +633,15 @@ function move_cursor_search(list, keyword, dir)
    else
       return false
    end
-   local index = w.infolist_integer(list, "index")
+   local steps = 0
    while func(list) == 1 do
+      steps = steps + 1
       if search_check_current_entry(list, keyword) then
          return true
       end
    end
-   while alt(list) == 1 do
-      if w.infolist_integer(list, "index") == index then
-         break
-      end
+   for i = 0, steps do
+      alt(list)
    end
    local msg
    if dir == "previous" then
