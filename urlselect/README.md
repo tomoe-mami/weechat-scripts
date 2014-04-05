@@ -137,7 +137,7 @@ Shift-Tab   | Switch to previous search scope
 Ctrl-N      | Change search scope to nickname only
 Ctrl-T      | Change search scope to message/text only
 Ctrl-U      | Change search scope to URL only
-Ctrl-B      | Change search scope to bot nickname and message
+Ctrl-B      | Change search scope to both nickname and message
 
 
 
@@ -170,6 +170,19 @@ Format of `urlselect_buffer_name` bar item. Valid values are `full`
 (eg: *irc.freenode.#weechat*), `normal` (eg: *freenode.#weechat*), and `short`
 (eg: *#weechat*). If it's set to other value, it will fallback to the default
 one (`normal`).
+
+##### plugins.var.lua.urlselect.search_scope
+
+Default search scope. Valid values are `nick`, `url`, `msg`, and `nick+msg`
+(default: `url`).
+
+##### plugins.var.lua.urlselect.search_prompt_color
+
+Color for search prompt (default: `default`).
+
+##### plugins.var.lua.urlselect.search_scope_color
+
+Color for search scope indicator (default: `green`).
 
 ##### plugins.var.lua.urlselect.url_color
 
@@ -226,4 +239,12 @@ Color for buffer name (default: `green`)
 These are for custom commands. Use `/urlselect bind` and `/urlselect unbind` to
 modify these options.
 
+##### plugins.var.lua.urlselect.label.*
 
+These settings are for labels of custom commands when displayed in help bar. So
+instead of showing `/god -damn long -ass command -with annoying -parameter list`
+the text after the keys in help bar will use these custom labels. The
+settings have to be set manually. For example, to set custom label for Alt-O you
+can use:
+
+    /set plugins.var.lua.urlselect.label.o xdg-open
