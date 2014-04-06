@@ -927,7 +927,7 @@ function command_cb(_, buffer, param)
 end
 
 function process_urls_in_message(msg, callback)
-   local pattern = "(%a[%w%+%.%-]+://[%w:!/#_~@&=,;%+%?%[%]%.%%%-]+)"
+   local pattern = "([%w%+%.%-]+://[%w:!/#_~@&=,;%+%?%[%]%.%%%(%)%-]+)"
    msg = w.string_remove_color(msg, "")
    local x1, x2, count = 1, 0, 0
    while x1 and x2 do
@@ -988,90 +988,21 @@ end
 
 
 function collect_urls(buffer, mode)
-   if mode == "current" then
-      return collect_urls_via_infolist(buffer)
-   else
-      local mixed_lines = w.hdata_pointer(
-         w.hdata_get("buffer"),
-         buffer,
-         "mixed_lines")
-      if mixed_lines and mixed_lines ~= "" then
-         return collect_urls_via_hdata(mixed_lines)
-      else
-         return collect_urls_via_infolist(buffer)
-      end
+   local source_name = "own_lines"
+   if mode == "merged" then
+      source_name = "lines"
    end
-end
-
-function collect_urls_via_infolist(buffer)
-   local index, info, list = 0, {}
-   local buf_lines = w.infolist_get("buffer_lines", buffer, "")
-   if not buf_lines or buf_lines == "" then
+   local h_buf = w.hdata_get("buffer")
+   local source = w.hdata_pointer(h_buf, buffer, source_name)
+   if not source or source == "" then
       return
    end
 
-   local buf_full_name = w.buffer_get_string(buffer, "full_name")
-   local buf_name = w.buffer_get_string(buffer, "name")
-   local buf_short_name = w.buffer_get_string(buffer, "short_name")
-   local buf_number = w.buffer_get_integer(buffer, "number")
-
-   list = w.infolist_new()
-
-   local add_cb = function (url, msg)
-      index = index + 1
-      info.index = index
-      info.url = url
-      info.message = msg
-      create_new_url_entry(list, info)
-   end
-
-   local get_info_from_current_line = function ()
-      local info = {}
-      local tags = w.infolist_string(buf_lines, "tags")
-      if g.config.tags and
-         #g.config.tags > 0 and
-         not find_tag(tags, g.config.tags) then
-         return
-      end
-      info.nick, tags = extract_nick_from_tags(tags)
-      info.prefix = w.string_remove_color(w.infolist_string(buf_lines, "prefix"), "")
-      if tags:match(",logger_backlog,") then
-         info.prefix = "backlog: " .. info.prefix
-      end
-      info.highlighted = w.infolist_integer(buf_lines, "highlight")
-      info.message = w.infolist_string(buf_lines, "message")
-      info.time = convert_datetime_into_timestamp(w.infolist_time(buf_lines, "date"))
-      info.buffer_full_name = buf_full_name
-      info.buffer_name = buf_name
-      info.buffer_short_name = buf_short_name
-      return info
-   end
-
-   while w.infolist_next(buf_lines) == 1 do
-      if w.infolist_integer(buf_lines, "displayed") == 1 then
-         info = get_info_from_current_line()
-         if info then
-            process_urls_in_message(info.message, add_cb)
-         end
-      end
-   end
-   w.infolist_free(buf_lines)
-   if index == 0 then
-      w.infolist_free(list)
-      list = nil
-   else
-      g.last_index = index
-   end
-   return list
-end
-
-function collect_urls_via_hdata(mixed_lines)
    local index, info = 0, {}
    local list = w.infolist_new()
-   local line = w.hdata_pointer(w.hdata_get("lines"), mixed_lines, "first_line")
+   local line = w.hdata_pointer(w.hdata_get("lines"), source, "first_line")
    local h_line = w.hdata_get("line")
    local h_line_data = w.hdata_get("line_data")
-   local h_buf = w.hdata_get("buffer")
 
    local add_cb = function (url, msg)
       index = index + 1
