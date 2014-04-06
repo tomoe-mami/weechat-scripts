@@ -66,12 +66,14 @@ else on Weechat.
 
 ### Bar & Bar Items
 
-This script will create 2 bars and 10 bar items. The first bar is called
+This script will create 3 bars and 11 bar items. The first bar is called
 `urlselect`. This bar is used for displaying the info about currently selected
 URL. Its settings are available under `weechat.bar.urlselect.*`. The second bar
 is for showing the list of keys and custom commands. It is called
 `urlselect_help` and its settings are available under
-`weechat.bar.urlselect_help.*`. Both bars are hidden by default.
+`weechat.bar.urlselect_help.*`. The last bar is `urlselect_search` and you can
+see its settings under `weechat.bar.urlselect_search.*`. All three bars are
+hidden by default.
 
 The list of bar items are:
 
@@ -99,6 +101,7 @@ The list of bar items are:
 - **urlselect_status**: Status notification. Visible when certain activity occur.
   For example, running a custom command.
 
+- **urlselect_search**: Search prompt.
 
 
 ### HSignal
