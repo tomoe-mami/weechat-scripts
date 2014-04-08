@@ -801,6 +801,7 @@ function cmd_action_search(buffer, args)
       else
          deactivate_search(buffer)
       end
+      w.bar_item_update(g.script.name .. "_help")
    end
    return w.WEECHAT_RC_OK
 end
@@ -1218,19 +1219,37 @@ function item_help_cb()
    else
       local key_color = w.color(g.config.key_color)
       local help_color = w.color(g.config.help_color)
+      local param = {
+         kc = key_color,
+         hc = help_color,
+         search_keys = ""
+      }
+
+      if g.enable_search then
+         param.search_keys = w.string_eval_expression([[
+
+${kc}<tab>${hc} next scope
+${kc}<shift-tab>${hc} prev scope
+${kc}<ctrl-n>${hc} search nick
+${kc}<ctrl-t>${hc} search message
+${kc}<ctrl-u>${hc} search url
+${kc}<ctrl-b>${hc} search nick+message
+]],
+         {}, param, {})
+      end
 
       local help_text = w.string_eval_expression([[
 ${kc}<ctrl-c>${hc} close
 ${kc}<ctrl-f>${hc} search
 ${kc}<up>${hc} prev
-${kc}<down>${hc} next
+${kc}<down>${hc} next${search_keys}
 ${kc}<home>${hc} first
 ${kc}<end>${hc} last
 ${kc}<ctrl-p>${hc} prev highlight
 ${kc}<ctrl-n>${hc} next highlight
 ${kc}<ctrl-s>${hc} send hsignal
 ]],
-   {}, { kc = key_color, hc = help_color }, {})
+      {}, param, {})
 
       local fmt = "%s<alt-%s>%s %s\n"
       for k = 0, 9 do
