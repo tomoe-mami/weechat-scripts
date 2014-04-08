@@ -305,6 +305,9 @@ function set_custom_command(key, cmd, label, silent)
       else
          g.keys.normal[key_code] = "run " .. key
          g.custom_commands[key] = { command = cmd }
+         if not label then
+            label = w.config_get_plugin("label." .. key)
+         end
          if label and label ~= "" then
             g.custom_commands[key].label = label
          end
@@ -426,6 +429,32 @@ function extract_nick_from_tags(tags)
    return nick, tags
 end
 
+function split(text, delim)
+   local s, c = text .. delim
+   local start, p1, p2 = 1, 1, 0
+   local e = "\\" .. delim:gsub("([^%w])", "%%%1")
+
+   return function ()
+      while p1 do
+         p1, p2 = s:find(delim, start, true)
+         if not p1 then
+            return nil
+         else
+            local o = p1 - 1
+            if s:sub(o, o) ~= "\\" then
+               c = s:sub(1, o):gsub(e, delim)
+               s = s:sub(p2 + 1)
+               start = 1
+               break
+            else
+               start = p2 + 1
+            end
+         end
+      end
+      return c
+   end
+end
+
 function find_tag(tag_string, tag_list)
    tag_string = "," .. tag_string:lower() .. ","
    for _, tag in ipairs(tag_list) do
@@ -512,6 +541,11 @@ function cmd_action_activate(buffer, args)
             "",
             "", "://", 1,
             "new_line_cb",
+            buffer)
+
+         g.hooks.win_switch = w.hook_signal(
+            "window_switch",
+            "buffer_deactivated_cb",
             buffer)
 
          g.active = true
@@ -649,7 +683,9 @@ function move_cursor_search(list, keyword, dir)
    else
       msg = "Reached end of list."
    end
-   set_status(msg .. " No URL found.")
+   set_status(string.format(
+      "Reached %s of list. No URL found.",
+      dir == "previous" and "start" or "end"))
    return false
 end
 
@@ -855,11 +891,13 @@ end
 
 function cmd_action_run(buffer, args)
    if g.list and g.list ~= "" then
-      if g.custom_commands[args] then
-         local cmd = eval_current_entry(g.custom_commands[args].command)
-         local label = g.custom_commands[args].label or args
-         set_status("Running cmd " .. label)
-         w.command(buffer, cmd)
+      local entry = g.custom_commands[args]
+      if entry then
+         set_status("Running cmd " .. (entry.label or args))
+         for cmd in split(entry.command, ";") do
+            cmd = eval_current_entry(cmd)
+            w.command(buffer, cmd)
+         end
       end
    end
    return w.WEECHAT_RC_OK
@@ -1321,7 +1359,7 @@ function setup_bar()
             info.name,                 -- name
             "on",                      -- hidden?
             settings[key].priority,    -- priority
-            "window",                  -- type
+            "root",                    -- type
             "active",                  -- condition
             "top",                     -- position
             settings[key].filling_tb,  -- filling top/bottom
