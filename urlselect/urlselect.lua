@@ -11,7 +11,8 @@ local g = {
       scan_merged_buffers = {
          type = "boolean",
          value = false,
-         description = "Scan URLs from buffers that are merged with the current one"
+         description =
+            "Scan URLs from buffers that are merged with the current one"
       },
       tags = {
          type = "list",
@@ -28,7 +29,8 @@ local g = {
       status_timeout = {
          type = "number",
          value = 1300,
-         description = "Timeout for displaying status notification (in milliseconds)"
+         description =
+            "Timeout for displaying status notification (in milliseconds)"
       },
       buffer_name = {
          type = "string",
@@ -45,11 +47,13 @@ local g = {
       nick_color = {
          type = "string",
          value = "",
-         description = "Color for nickname. Leave empty to use Weechat's nick color"
+         description =
+            "Color for nickname. Leave empty to use Weechat's nick color"
       },
       highlight_color = {
          type = "string",
-         value = "${weechat.color.chat_highlight},${weechat.color.chat_highlight_bg}",
+         value =
+            "${weechat.color.chat_highlight},${weechat.color.chat_highlight_bg}",
          description = "Nickname color for highlighted message" 
       },
       index_color = {
@@ -104,7 +108,8 @@ local g = {
             url = true, msg = true,
             nick = true, ["nick+msg"] = true
          },
-         description = "Default search scope. Valid values are: url, msg, nick or nick+msg"
+         description =
+            "Default search scope. Valid values are: url, msg, nick or nick+msg"
       },
       search_prompt_color = {
          type = "string",
@@ -121,7 +126,8 @@ local g = {
    active = false,
    list = "",
    bar_items = { 
-      list = {"index", "nick", "url", "time", "message", "buffer_name", "buffer_number"},
+      list = { "index", "nick", "url", "time",
+               "message", "buffer_name", "buffer_number"},
       extra = { "title", "help", "status", "search"}
    },
    custom_commands = {},
@@ -324,7 +330,11 @@ end
 
 function set_custom_label(key, label)
    if key and key ~= "" and g.custom_commands[key] then
-      g.custom_commands[key].label = label
+      if not label or label == "" then
+         g.custom_commands[key].label = nil
+      else
+         g.custom_commands[key].label = label
+      end
    end
 end
 
@@ -334,7 +344,7 @@ function setup_hooks()
       g.script.name,
       "Control urlselect script",
       "[activate [current|merged]] " ..
-      "|| bind <key> <command> " ..
+      "|| bind [-label <label>] <key> <command> " ..
       "|| label <key> [<custom label>] " ..
       "|| unbind <key> [<key> ...]" ..
       "|| list-commands " ..
@@ -349,11 +359,14 @@ function setup_hooks()
       activate: Activate the URL selection bar (default action). The optional
                 parameter `current` and `merged` can be used to force script to
                 scan only on current buffer or all currently merged buffers.
-          bind: Bind a key to a Weechat command.
+          bind: Bind a key to a Weechat command. You can use optional parameter
+                -label to specify the text that will be shown in help bar.
         unbind: Unbind key.
  list-commands: List all custom commands and their keys.
          <key>: A single digit character (0-9) or one lowercase alphabet (a-z).
-     <command>: Weechat command. The following variables will be replaced with
+     <command>: Weechat command. You can specify multiple commands by using ; as
+                separator. To use literal semicolon, prepend it with a backslash.
+                Inside a command the following variables will be replaced with
                 their corresponding values from the currently selected URL:
                 ${url}, ${nick}, ${time}, ${message}, ${index}, ${buffer_name},
                 ${buffer_full_name}, ${buffer_short_name}, ${buffer_number}
@@ -390,10 +403,20 @@ KEY BINDINGS
  Alt-[0-9a-z]: Run custom command.
            F1: Toggle help bar.
 
+The keys below are only available if search bar is active
+
+          Tab: Switch to next scope
+    Shift-Tab: Switch to previous scope
+       Ctrl-N: Search only in nicknames
+       Ctrl-T: Search only in messages
+       Ctrl-U: Search only in URLs
+       Ctrl-B: Search both in nicknames and messages
+
 ]],
-      "activate || bind || unbind || list-commands || deactivate || run || " ..
-      "navigate next|previous|first|last|previous-highlight|next-highlight || " ..
-      "search || scope next|previous|url|nick|msg|nick+msg || help",
+      "activate current|merged || bind -label || unbind || list-commands ||" ..
+      "deactivate || run || search || help ||" ..
+      "navigate next|previous|first|last|previous-highlight|next-highlight ||" ..
+      "scope next|previous|url|nick|msg|nick+msg",
       "command_cb",
       "")
 end
@@ -451,7 +474,7 @@ function split(text, delim)
             end
          end
       end
-      return c
+      return c, s
    end
 end
 
@@ -465,7 +488,8 @@ function find_tag(tag_string, tag_list)
    end
 end
 
-function new_line_cb(buffer, evbuf, date, tags, displayed, highlighted, prefix, message)
+function new_line_cb(buffer, evbuf, date, tags,
+                     displayed, highlighted, prefix, message)
    if displayed == "1" and g.list and g.list ~= "" then
       if g.config.scan_merged_buffers then
          local evbuf_num = w.buffer_get_integer(evbuf, "number")
@@ -769,7 +793,8 @@ function activate_search(buffer)
    g._original_input_pos = w.buffer_get_integer(buffer, "input_pos")
    w.buffer_set(buffer, "input", "")
    g.hooks.enter = w.hook_command_run("/input return", "enter_cb", "")
-   g.hooks.search = w.hook_signal("input_text_changed", "search_input_cb", buffer)
+   g.hooks.search =
+      w.hook_signal("input_text_changed", "search_input_cb", buffer)
    set_keys(buffer, "search", true)
 end
 
@@ -832,9 +857,10 @@ function cmd_action_search_scope(buffer, args)
          end
       end
       if not found_scope then
-         print("Unknown scope: ${color:bold}${scope}${color:-bold}. " ..
-               "See ${color:bold}/help ${script_name}${color:-bold} for usage info.",
-               { scope = args, prefix_type = "error"})
+         print(
+            "Unknown scope: ${color:bold}${scope}${color:-bold}. See " ..
+            "${color:bold}/help ${script_name}${color:-bold} for usage info.",
+            { scope = args, prefix_type = "error"})
          return w.WEECHAT_RC_OK
       end
    end
@@ -846,14 +872,38 @@ function cmd_action_search_scope(buffer, args)
 end
 
 function cmd_action_bind(buffer, args)
-   local key, command = args:match("^([0-9a-z]?)%s(.*)")
-   w.config_set_plugin("cmd." .. key, command)
+   local s1, s2 = args:match("^([^%s]+)%s+(.+)")
+   local label, key, command
+   if s1 and s2 then
+      if s1 == "-label" then
+         if s2:sub(1, 1) == '"' then
+            for p, r in split(s2:sub(2), '"') do
+               label = p
+               s2 = r:sub(1, #r - 1)
+               break
+            end
+            key, command = s2:match("^%s*([^%s]+)%s+(.+)")
+         else
+            label, key, command = s2:match("^([^%s]+)%s+([^%s]+)%s+(.+)")
+         end
+      else
+         key = s1
+         command = s2
+      end
+      if key and command then
+         w.config_set_plugin("cmd." .. key, command)
+         if label and label ~= "" then
+            w.config_set_plugin("label." .. key, label)
+         end
+      end
+   end
    return w.WEECHAT_RC_OK
 end
 
 function cmd_action_unbind(buffer, args)
    for key in args:gmatch("([^%s]+)") do
       w.config_unset_plugin("cmd." .. key)
+      w.config_unset_plugin("label." .. key)
    end
    return w.WEECHAT_RC_OK
 end
@@ -1057,7 +1107,9 @@ function collect_urls(buffer, mode)
       info.prefix = w.hdata_string(h_line_data, data, "prefix")
 
       local tag_required = (g.config.tags and #g.config.tags > 0)
-      local tag_count = w.hdata_get_var_array_size(h_line_data, data, "tags_array")
+      local tag_count =
+         w.hdata_get_var_array_size(h_line_data, data, "tags_array")
+
       if tag_required then
          if not tag_count or tag_count < 1 then
             return
@@ -1228,30 +1280,30 @@ function item_help_cb()
       if g.enable_search then
          param.search_keys = w.string_eval_expression([[
 
-${kc}<tab>${hc} next scope
+      ${kc}<tab>${hc} next scope
 ${kc}<shift-tab>${hc} prev scope
-${kc}<ctrl-n>${hc} search nick
-${kc}<ctrl-t>${hc} search message
-${kc}<ctrl-u>${hc} search url
-${kc}<ctrl-b>${hc} search nick+message
+   ${kc}<ctrl-n>${hc} search nick
+   ${kc}<ctrl-t>${hc} search message
+   ${kc}<ctrl-u>${hc} search url
+   ${kc}<ctrl-b>${hc} search nick+message
 ]],
          {}, param, {})
       end
 
       local help_text = w.string_eval_expression([[
-${kc}<ctrl-c>${hc} close
-${kc}<ctrl-f>${hc} search
-${kc}<up>${hc} prev
-${kc}<down>${hc} next${search_keys}
-${kc}<home>${hc} first
-${kc}<end>${hc} last
-${kc}<ctrl-p>${hc} prev highlight
-${kc}<ctrl-n>${hc} next highlight
-${kc}<ctrl-s>${hc} send hsignal
+   ${kc}<ctrl-c>${hc} close
+   ${kc}<ctrl-f>${hc} search
+       ${kc}<up>${hc} prev
+     ${kc}<down>${hc} next${search_keys}
+     ${kc}<home>${hc} first
+      ${kc}<end>${hc} last
+   ${kc}<ctrl-p>${hc} prev highlight
+   ${kc}<ctrl-n>${hc} next highlight
+   ${kc}<ctrl-s>${hc} send hsignal
 ]],
       {}, param, {})
 
-      local fmt = "%s<alt-%s>%s %s\n"
+      local fmt = "    %s<alt-%s>%s %s\n"
       for k = 0, 9 do
          local c = tostring(k)
          if g.custom_commands[c] then
@@ -1309,12 +1361,8 @@ function item_status_cb()
          if g.hooks.timer then
             w.unhook(g.hooks.timer)
          end
-         g.hooks.timer = w.hook_timer(
-            g.config.status_timeout,
-            0,
-            1,
-            "set_status",
-            "")
+         g.hooks.timer =
+            w.hook_timer(g.config.status_timeout, 0, 1, "set_status", "")
       end
       return s
    end
@@ -1354,7 +1402,8 @@ function setup_bar()
          filling_tb = "horizontal",
          max_size = 2,
          items = w.string_eval_expression(
-            "[${s}_title],#${s}_index,[${s}_buffer_name],<${s}_nick>,${s}_message,${s}_status",
+            "[${s}_title],#${s}_index,[${s}_buffer_name],<${s}_nick>," ..
+            "${s}_message,${s}_status",
             {}, { s = g.script.name }, {})
       },
       search = {
