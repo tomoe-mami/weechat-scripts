@@ -5,7 +5,7 @@ A bar for selecting URLs from current buffer. Requires Weechat 0.4.4 or higher.
 
 ![screenshot][]
 
-[screenshot]: http://i.imgur.com/NkNi2QR.png
+[screenshot]: http://i.imgur.com/2NirRu2.png
 
 *URL selection bar on top of weechat with the help bar showing list of
 available key bindings*

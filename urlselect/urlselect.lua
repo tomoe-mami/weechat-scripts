@@ -702,11 +702,6 @@ function move_cursor_search(list, keyword, dir)
       alt(list)
    end
    local msg
-   if dir == "previous" then
-      msg = "Reached start of list."
-   else
-      msg = "Reached end of list."
-   end
    set_status(string.format(
       "Reached %s of list. No URL found.",
       dir == "previous" and "start" or "end"))
