@@ -342,7 +342,6 @@ function setup_hooks()
       "Control urlselect script",
       "[activate [current|merged]] " ..
       "|| bind [-label <label>] <key> <command> " ..
-      "|| label <key> [<custom label>] " ..
       "|| unbind <key> [<key> ...]" ..
       "|| list-commands " ..
       "|| deactivate " ..
