@@ -10,13 +10,13 @@ local g = {
    defaults = {
       scan_merged_buffers = {
          type = "boolean",
-         value = false,
+         value = "0",
          description =
             "Scan URLs from buffers that are merged with the current one"
       },
       tags = {
          type = "list",
-         value = { "notify_message", "notify_private", "notify_highlight" },
+         value = "notify_message,notify_private,notify_highlight",
          description =
             "Comma separated list of tags. If not empty, script will only " ..
             "scan URLs from messages with any of these tags"
@@ -28,7 +28,7 @@ local g = {
       },
       status_timeout = {
          type = "number",
-         value = 1300,
+         value = "1300",
          description =
             "Timeout for displaying status notification (in milliseconds)"
       },
@@ -222,22 +222,19 @@ function print(msg, param)
 end
 
 function get_or_set_option(name, info, value)
+   local is_set = true
    if not value then
       if w.config_is_set_plugin(name) ~= 1 then
-         if info.type == "list" then
-            value = string.lower(table.concat(info.value, ","))
-         elseif info.type == "boolean" then
-            value = info.value and 1 or 0
-         elseif info.type == "number" then
-            value = info.value
-         else
+         is_set = false
+         if info.type == "string" then
             value = w.string_eval_expression(info.value, {}, {}, {})
+         else
+            value = info.value
          end
          w.config_set_plugin(name, value)
          if info.description then
             w.config_set_desc_plugin(name, info.description)
          end
-         return (info.type == "list" and info.value or value), true
       else
          value = w.config_get_plugin(name)
       end
@@ -258,14 +255,14 @@ function get_or_set_option(name, info, value)
          value = value and value ~= 0
       end
    end
-   return value, false
+   return value, is_set
 end
 
 function init_config()
    local total_cmd, not_set, first_run = 0
    for name, info in pairs(g.defaults) do
-      g.config[name], not_set = get_or_set_option(name, info)
-      if first_run == nil and not_set then
+      g.config[name], is_set = get_or_set_option(name, info)
+      if first_run == nil and not is_set then
          first_run = true
       end
    end
