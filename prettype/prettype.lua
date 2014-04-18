@@ -1,23 +1,25 @@
---[[
-   typeass
-
-   Stupid type assistant. Does nothing other than changing regular quotes
-   to &ldquo; and &rdquo; pair, capitalize letter that looks like the start
-   of sentence, and few other stupid replacements.
-
-   Author: rumia <https://github.com/rumia>
-   License: WTFPL
-   Requires: lrexlib-pcre and slnunicode
---]]
-
+local w = weechat
 local pcre = require "rex_pcre"
 local unicode = require "unicode"
-local utf8_flag = pcre.flags().UTF8
 
-local buffer_mask = "*,!*.nickserv,!*.chanserv"
-local placeholders = {}
-local nick_completion_char = ":"
-local diacritic_marks = { s = 0x0336, u = 0x0332 }
+local g = {
+   script = {
+      name = "prettype",
+      author = "tomoe-mami <https://github.com/tomoe-mami>",
+      license = "WTFPL",
+      version = "0.2",
+      description = "Prettify text you typed with auto-capitalization and proper unicode symbols"
+   },
+   config = {
+      nick_completer = ":",
+   },
+   diacritic_tags = {
+      s = 0x0336,
+      u = 0x0332
+   },
+   utf8_flag = pcre.flags().UTF8,
+   hooks = {}
+}
 
 function u(...)
    local result = ""
@@ -30,110 +32,154 @@ function u(...)
    return result
 end
 
-function combine(kind, text)
-   kind = string.lower(kind)
-   if not diacritic_marks[kind] then
+function combine(tag, text)
+   if not g.diacritic_tags[tag] then
       return text
    end
-   return pcre.gsub(text, "(.)" , u("%1", diacritic_marks[kind]), nil, utf8_flag)
+   return pcre.gsub(text, "(.)", u("%1", g.diacritic_tags[tag]), nil, g.utf8_flag)
 end
 
-local digraphs = {
-      ["SP"] = 0x0020, -- SPACE
-       ["!"] = 0x0021, -- EXCLAMATION MARK
-      ["\""] = 0x0022, -- QUOTATION MARK
-      ["Nb"] = 0x0023, -- NUMBER SIGN
-      ["DO"] = 0x0024, -- DOLLAR SIGN
-       ["%"] = 0x0025, -- PERCENT SIGN
-       ["&"] = 0x0026, -- AMPERSAND
-       ["'"] = 0x0027, -- APOSTROPHE
-       ["("] = 0x0028, -- LEFT PARENTHESIS
-       [")"] = 0x0029, -- RIGHT PARENTHESIS
-       ["*"] = 0x002a, -- ASTERISK
-       ["+"] = 0x002b, -- PLUS SIGN
-       [","] = 0x002c, -- COMMA
-       ["-"] = 0x002d, -- HYPHEN-MINUS
-       ["."] = 0x002e, -- FULL STOP
-       ["/"] = 0x002f, -- SOLIDUS
-       ["0"] = 0x0030, -- DIGIT ZERO
-       ["1"] = 0x0031, -- DIGIT ONE
-       ["2"] = 0x0032, -- DIGIT TWO
-       ["3"] = 0x0033, -- DIGIT THREE
-       ["4"] = 0x0034, -- DIGIT FOUR
-       ["5"] = 0x0035, -- DIGIT FIVE
-       ["6"] = 0x0036, -- DIGIT SIX
-       ["7"] = 0x0037, -- DIGIT SEVEN
-       ["8"] = 0x0038, -- DIGIT EIGHT
-       ["9"] = 0x0039, -- DIGIT NINE
-       [":"] = 0x003a, -- COLON
-       [";"] = 0x003b, -- SEMICOLON
-       ["<"] = 0x003c, -- LESS-THAN SIGN
-       ["="] = 0x003d, -- EQUALS SIGN
-       [">"] = 0x003e, -- GREATER-THAN SIGN
-       ["?"] = 0x003f, -- QUESTION MARK
-      ["At"] = 0x0040, -- COMMERCIAL AT
-       ["A"] = 0x0041, -- LATIN CAPITAL LETTER A
-       ["B"] = 0x0042, -- LATIN CAPITAL LETTER B
-       ["C"] = 0x0043, -- LATIN CAPITAL LETTER C
-       ["D"] = 0x0044, -- LATIN CAPITAL LETTER D
-       ["E"] = 0x0045, -- LATIN CAPITAL LETTER E
-       ["F"] = 0x0046, -- LATIN CAPITAL LETTER F
-       ["G"] = 0x0047, -- LATIN CAPITAL LETTER G
-       ["H"] = 0x0048, -- LATIN CAPITAL LETTER H
-       ["I"] = 0x0049, -- LATIN CAPITAL LETTER I
-       ["J"] = 0x004a, -- LATIN CAPITAL LETTER J
-       ["K"] = 0x004b, -- LATIN CAPITAL LETTER K
-       ["L"] = 0x004c, -- LATIN CAPITAL LETTER L
-       ["M"] = 0x004d, -- LATIN CAPITAL LETTER M
-       ["N"] = 0x004e, -- LATIN CAPITAL LETTER N
-       ["O"] = 0x004f, -- LATIN CAPITAL LETTER O
-       ["P"] = 0x0050, -- LATIN CAPITAL LETTER P
-       ["Q"] = 0x0051, -- LATIN CAPITAL LETTER Q
-       ["R"] = 0x0052, -- LATIN CAPITAL LETTER R
-       ["S"] = 0x0053, -- LATIN CAPITAL LETTER S
-       ["T"] = 0x0054, -- LATIN CAPITAL LETTER T
-       ["U"] = 0x0055, -- LATIN CAPITAL LETTER U
-       ["V"] = 0x0056, -- LATIN CAPITAL LETTER V
-       ["W"] = 0x0057, -- LATIN CAPITAL LETTER W
-       ["X"] = 0x0058, -- LATIN CAPITAL LETTER X
-       ["Y"] = 0x0059, -- LATIN CAPITAL LETTER Y
-       ["Z"] = 0x005a, -- LATIN CAPITAL LETTER Z
-      ["<("] = 0x005b, -- LEFT SQUARE BRACKET
-      ["//"] = 0x005c, -- REVERSE SOLIDUS
-      [")>"] = 0x005d, -- RIGHT SQUARE BRACKET
-      ["'>"] = 0x005e, -- CIRCUMFLEX ACCENT
-       ["_"] = 0x005f, -- LOW LINE
-      ["'!"] = 0x0060, -- GRAVE ACCENT
-       ["a"] = 0x0061, -- LATIN SMALL LETTER A
-       ["b"] = 0x0062, -- LATIN SMALL LETTER B
-       ["c"] = 0x0063, -- LATIN SMALL LETTER C
-       ["d"] = 0x0064, -- LATIN SMALL LETTER D
-       ["e"] = 0x0065, -- LATIN SMALL LETTER E
-       ["f"] = 0x0066, -- LATIN SMALL LETTER F
-       ["g"] = 0x0067, -- LATIN SMALL LETTER G
-       ["h"] = 0x0068, -- LATIN SMALL LETTER H
-       ["i"] = 0x0069, -- LATIN SMALL LETTER I
-       ["j"] = 0x006a, -- LATIN SMALL LETTER J
-       ["k"] = 0x006b, -- LATIN SMALL LETTER K
-       ["l"] = 0x006c, -- LATIN SMALL LETTER L
-       ["m"] = 0x006d, -- LATIN SMALL LETTER M
-       ["n"] = 0x006e, -- LATIN SMALL LETTER N
-       ["o"] = 0x006f, -- LATIN SMALL LETTER O
-       ["p"] = 0x0070, -- LATIN SMALL LETTER P
-       ["q"] = 0x0071, -- LATIN SMALL LETTER Q
-       ["r"] = 0x0072, -- LATIN SMALL LETTER R
-       ["s"] = 0x0073, -- LATIN SMALL LETTER S
-       ["t"] = 0x0074, -- LATIN SMALL LETTER T
-       ["u"] = 0x0075, -- LATIN SMALL LETTER U
-       ["v"] = 0x0076, -- LATIN SMALL LETTER V
-       ["w"] = 0x0077, -- LATIN SMALL LETTER W
-       ["x"] = 0x0078, -- LATIN SMALL LETTER X
-       ["y"] = 0x0079, -- LATIN SMALL LETTER Y
-       ["z"] = 0x007a, -- LATIN SMALL LETTER Z
-      ["(!"] = 0x007b, -- LEFT CURLY BRACKET
-      ["!!"] = 0x007c, -- VERTICAL LINE
-      ["!)"] = 0x007d, -- RIGHT CURLY BRACKET
-      ["'?"] = 0x007e, -- TILDE
+function convert_digraphs(prefix, code)
+   if not g.digraphs[code] then
+      return prefix .. code
+   else
+      return u(g.digraphs[code])
+   end
+end
+
+function convert_codepoint(s)
+   return u(tonumber(s, 16))
+end
+
+function replace_patterns(text)
+   for _, p in ipairs(g.replacements) do
+      text = pcre.gsub(text, p[1], p[2], nil, g.utf8_flag)
+   end
+   return text
+end
+
+function protect_url(text)
+   return pcre.gsub(
+      text,
+      "(^|\\s)([a-z][a-z0-9-]+://)([-a-zA-Z0-9+&@#/%?=~_|\\[\\]\\(\\)!:,\\.;]*[-a-zA-Z0-9+&@#/%=~_|\\[\\]])?($|\\W)",
+      "%1`%2%3`%4",
+      nil,
+      g.utf8_flag)
+end
+
+function protect_nick_completion(text)
+   if g.config.nick_completer and g.config.nick_completer ~= "" then
+      text = text:gsub(
+         "^([^%s]+%" .. g.config.nick_completer .. "%s+)",
+         "`%1`")
+   end
+   return text
+end
+
+function process(text)
+   local placeholders, index = {}, 0
+   text = protect_url(text)
+   text = protect_nick_completion(text)
+
+   text = text:gsub("`([^`]+)`", function (s)
+      index = index + 1
+      placeholders[index] = s
+      return "\027\016" .. index .. "\027\016"
+   end)
+
+   text = replace_patterns(text)
+
+   text = text:gsub("\027\016(%d+)\027\016", function (i)
+      i = tonumber(i)
+      return placeholders[i] or ""
+   end)
+
+   return text
+end
+
+function remove_weechat_escapes(text)
+   text = pcre.gsub(text, "\\x19(b[FDBl_#-]|E|\\x1c|[FB*]?[*!/_|]?(\\d{2}|@\\d{5})(,(\\d{2}|@\\d{5}))?)", "")
+   return text
+end
+
+function input_return_cb(_, buffer, cmd)
+   local current_input = w.buffer_get_string(buffer, "input")
+   if w.string_is_command_char(current_input) ~= 1 then
+      local text = w.buffer_get_string(buffer, "localvar_prettype")
+      text = remove_weechat_escapes(text)
+      w.buffer_set(buffer, "input", text)
+   end
+   return w.WEECHAT_RC_OK
+end
+
+function input_text_display_cb(_, modifier, buffer, text)
+   if w.string_is_command_char(text) ~= 1 then
+      text = process(text)
+      w.buffer_set(buffer, "localvar_set_prettype", text)
+   end
+   return text
+end
+
+function setup()
+   assert(
+      w.register(
+         g.script.name,
+         g.script.author,
+         g.script.version,
+         g.script.license,
+         g.script.description,
+         "", ""),
+      "Unable to register script. Perhaps it has been loaded before?")
+
+   local opt = w.config_get("weechat.completion.nick_completer")
+   g.nick_completer = w.config_string(opt)
+
+   w.hook_command_run("/input return", "input_return_cb", "")
+   w.hook_modifier("input_text_display_with_cursor", "input_text_display_cb", "")
+end
+
+g.replacements = {
+   { "(^\\s+|\\s+$)",                        "" },
+   { "(~!)([^\\s~]+)\\s?",                   convert_digraphs },
+   { "(\\]\\])(..)",                         convert_digraphs },
+   { "\\\\u([[:xdigit:]]{4})",               convert_codepoint },
+   { "\\.{3,}",                              u(0x2026, " ")},
+   { "-{3}",                                 u(0x2014) },
+   { "-{2}",                                 u(0x2013) },
+   { "<-",                                   u(0x2190) },
+   { "->",                                   u(0x2192) },
+   { "<<",                                   u(0x00ab) },
+   { ">>",                                   u(0x00bb) },
+   { "\\+-",                                 u(0x00b1) },
+   { "===",                                  u(0x2261) },
+   { "(!=|=/=)",                             u(0x2260) },
+   { "<=",                                   u(0x2264) },
+   { ">=",                                   u(0x2265) },
+   { "(?i:\\(r\\))",                         u(0x00ae) },
+   { "(?i:\\(c\\))",                         u(0x00a9) },
+   { "(?i:\\(tm\\))",                        u(0x2122) },
+   { "(\\d+)\\s*x\\s*(\\d+)",                u("%1 ", 0x00d7, " %2") },
+   { "[.?!][\\s\"]+\\p{Ll}",                 unicode.utf8.upper },
+   {
+      "^(?:\\x1b\\x10\\d+\\x1b\\x10\\s*|[\"])?\\p{Ll}",
+      unicode.utf8.upper
+   },
+   { "(^|[-\\x{2014}\\s(\[\"])'",            u("%1", 0x2018) },
+   { "'",                                    u(0x2019) },
+   { "(^|[-\\x{2014/\\[(\\x{2018}\\s])\"",   u("%1", 0x201c) },
+   { "\"",                                   u(0x201d) },
+   { "\\bi\\b",                              unicode.utf8.upper },
+   {
+      "\\b(?i:(https?|ss[lh]|ftp|ii?rc|fyi|cmiiw|afaik|pebkac|wtf|wth|lol|rofl|ymmv|nih|ama|eli5|mfw|mrw|tl;d[rw]|sasl))\\b",
+      unicode.utf8.upper
+   },
+   { "(\\d+)deg\\b",                         u("%1", 0x00b0) },
+   { "\\x{00b0}\\s*[cf]\\b",                 unicode.utf8.upper },
+   { "<([us])>(.+?)</\\1>",                  combine },
+   { "\\s{2,}",                              " " },
+}
+
+g.digraphs = {
       ["NS"] = 0x00a0, -- NO-BREAK SPACE
       ["!I"] = 0x00a1, -- INVERTED EXCLAMATION MARK
       ["Ct"] = 0x00a2, -- CENT SIGN
@@ -306,6 +352,8 @@ local digraphs = {
       ["'n"] = 0x0149, -- LATIN SMALL LETTER N PRECEDED BY APOSTROPHE
       ["NG"] = 0x014a, -- LATIN CAPITAL LETTER ENG (Lappish)
       ["ng"] = 0x014b, -- LATIN SMALL LETTER ENG (Lappish)
+      ["NY"] = 0x00d1, -- LATIN CAPITAL LETTER N WITH TILDE
+      ["ny"] = 0x00f1, -- LATIN SMALL LETTER N WITH TILDE
       ["O-"] = 0x014c, -- LATIN CAPITAL LETTER O WITH MACRON
       ["o-"] = 0x014d, -- LATIN SMALL LETTER O WITH MACRON
       ["O("] = 0x014e, -- LATIN CAPITAL LETTER O WITH BREVE
@@ -1827,74 +1875,6 @@ local digraphs = {
      ["lh."] = 0xfefa, -- ARABIC LIGATURE LAM WITH ALEF WITH HAMZA BELOW FINAL FORM
      ["la-"] = 0xfefb, -- ARABIC LIGATURE LAM WITH ALEF ISOLATED FORM
      ["la."] = 0xfefc, -- ARABIC LIGATURE LAM WITH ALEF FINAL FORM
-      ["NU"] = 0x0000, -- NULL (NUL)
-      ["SH"] = 0x0001, -- START OF HEADING (SOH)
-      ["SX"] = 0x0002, -- START OF TEXT (STX)
-      ["EX"] = 0x0003, -- END OF TEXT (ETX)
-      ["ET"] = 0x0004, -- END OF TRANSMISSION (EOT)
-      ["EQ"] = 0x0005, -- ENQUIRY (ENQ)
-      ["AK"] = 0x0006, -- ACKNOWLEDGE (ACK)
-      ["BL"] = 0x0007, -- BELL (BEL)
-      ["BS"] = 0x0008, -- BACKSPACE (BS)
-      ["HT"] = 0x0009, -- CHARACTER TABULATION (HT)
-      ["LF"] = 0x000a, -- LINE FEED (LF)
-      ["VT"] = 0x000b, -- LINE TABULATION (VT)
-      ["FF"] = 0x000c, -- FORM FEED (FF)
-      ["CR"] = 0x000d, -- CARRIAGE RETURN (CR)
-      ["SO"] = 0x000e, -- SHIFT OUT (SO)
-      ["SI"] = 0x000f, -- SHIFT IN (SI)
-      ["DL"] = 0x0010, -- DATALINK ESCAPE (DLE)
-      ["D1"] = 0x0011, -- DEVICE CONTROL ONE (DC1)
-      ["D2"] = 0x0012, -- DEVICE CONTROL TWO (DC2)
-      ["D3"] = 0x0013, -- DEVICE CONTROL THREE (DC3)
-      ["D4"] = 0x0014, -- DEVICE CONTROL FOUR (DC4)
-      ["NK"] = 0x0015, -- NEGATIVE ACKNOWLEDGE (NAK)
-      ["SY"] = 0x0016, -- SYNCRONOUS IDLE (SYN)
-      ["EB"] = 0x0017, -- END OF TRANSMISSION BLOCK (ETB)
-      ["CN"] = 0x0018, -- CANCEL (CAN)
-      ["EM"] = 0x0019, -- END OF MEDIUM (EM)
-      ["SB"] = 0x001a, -- SUBSTITUTE (SUB)
-      ["EC"] = 0x001b, -- ESCAPE (ESC)
-      ["FS"] = 0x001c, -- FILE SEPARATOR (IS4)
-      ["GS"] = 0x001d, -- GROUP SEPARATOR (IS3)
-      ["RS"] = 0x001e, -- RECORD SEPARATOR (IS2)
-      ["US"] = 0x001f, -- UNIT SEPARATOR (IS1)
-      ["DT"] = 0x007f, -- DELETE (DEL)
-      ["PA"] = 0x0080, -- PADDING CHARACTER (PAD)
-      ["HO"] = 0x0081, -- HIGH OCTET PRESET (HOP)
-      ["BH"] = 0x0082, -- BREAK PERMITTED HERE (BPH)
-      ["NH"] = 0x0083, -- NO BREAK HERE (NBH)
-      ["IN"] = 0x0084, -- INDEX (IND)
-      ["NL"] = 0x0085, -- NEXT LINE (NEL)
-      ["SA"] = 0x0086, -- START OF SELECTED AREA (SSA)
-      ["ES"] = 0x0087, -- END OF SELECTED AREA (ESA)
-      ["HS"] = 0x0088, -- CHARACTER TABULATION SET (HTS)
-      ["HJ"] = 0x0089, -- CHARACTER TABULATION WITH JUSTIFICATION (HTJ)
-      ["VS"] = 0x008a, -- LINE TABULATION SET (VTS)
-      ["PD"] = 0x008b, -- PARTIAL LINE FORWARD (PLD)
-      ["PU"] = 0x008c, -- PARTIAL LINE BACKWARD (PLU)
-      ["RI"] = 0x008d, -- REVERSE LINE FEED (RI)
-      ["S2"] = 0x008e, -- SINGLE-SHIFT TWO (SS2)
-      ["S3"] = 0x008f, -- SINGLE-SHIFT THREE (SS3)
-      ["DC"] = 0x0090, -- DEVICE CONTROL STRING (DCS)
-      ["P1"] = 0x0091, -- PRIVATE USE ONE (PU1)
-      ["P2"] = 0x0092, -- PRIVATE USE TWO (PU2)
-      ["TS"] = 0x0093, -- SET TRANSMIT STATE (STS)
-      ["CC"] = 0x0094, -- CANCEL CHARACTER (CCH)
-      ["MW"] = 0x0095, -- MESSAGE WAITING (MW)
-      ["SG"] = 0x0096, -- START OF GUARDED AREA (SPA)
-      ["EG"] = 0x0097, -- END OF GUARDED AREA (EPA)
-      ["SS"] = 0x0098, -- START OF STRING (SOS)
-      ["GC"] = 0x0099, -- SINGLE GRAPHIC CHARACTER INTRODUCER (SGCI)
-      ["SC"] = 0x009a, -- SINGLE CHARACTER INTRODUCER (SCI)
-      ["CI"] = 0x009b, -- CONTROL SEQUENCE INTRODUCER (CSI)
-      ["ST"] = 0x009c, -- STRING TERMINATOR (ST)
-      ["OC"] = 0x009d, -- OPERATING SYSTEM COMMAND (OSC)
-      ["PM"] = 0x009e, -- PRIVACY MESSAGE (PM)
-      ["AC"] = 0x009f, -- APPLICATION PROGRAM COMMAND (APC)
-      ["/c"] = 0xe001, -- JOIN THIS LINE WITH NEXT LINE (Mnemonic)
-      ["UA"] = 0xe002, -- Unit space A (ISO-IR-8-1 064)
-      ["UB"] = 0xe003, -- Unit space B (ISO-IR-8-1 096)
      ["\"3"] = 0xe004, -- NON-SPACING UMLAUT (ISO-IR-38 201) (character part)
      ["\"1"] = 0xe005, -- NON-SPACING DIAERESIS WITH ACCENT (ISO-IR-70 192) (character part)
      ["\"!"] = 0xe006, -- NON-SPACING GRAVE ACCENT (ISO-IR-103 193) (character part)
@@ -1933,136 +1913,5 @@ local digraphs = {
       ["?*"] = 0xe027, -- GREEK PERISPOMENI (ISO-10646-1DIS 032/032/042/165)
       ["J<"] = 0xe028 -- LATIN CAPITAL LETTER J WITH CARON (lowercase: 000/000/001/240)
 }
-
-function convert_digraphs(s)
-   local t = ""
-   for c in s:gmatch("([^%|]+)") do
-      t = t .. u(digraphs[c] or "")
-   end
-   return t
-end
-
-local replacements = {
-   { "(^\\s+|\\s+$)",          "" },
-   { "\"([^\"]+)\"",           u(0x201c, "%1", 0x201d) },
-   { "\\.{3,}",                u(0x2026) },
-   { "-{3}",                   u(0x2014) },
-   { "-{2}",                   u(0x2013) },
-   { "(\\s)<-",                u("%1", 0x2190) },
-   { "(\\s)->",                u("%1", 0x2192) },
-   { "<<",                     u(0x00ab) },
-   { ">>",                     u(0x00bb) },
-   { "\\+-",                   u(0x00b1) },
-   { "=/=",                    u(0x2260) },
-   { "<=",                     u(0x2264) },
-   { ">=",                     u(0x2265) },
-   { "(\\d+)\\s*x\\s*(\\d+)",  u("%1", 0x00d7, "%2") },
-   { "(?i:\\(r\\))",           u(0x00ae) },
-   { "(?i:\\(c\\))",           u(0x00a9) },
-   { "(?i:\\(tm\\))",          u(0x2122) },
-   {
-      "\\b(?i:(i{1,2}rc|fyi|cmiiw|afaik|pebkac))\\b",
-      unicode.utf8.upper
-   },
-   { "^\\s*\\p{Ll}",           unicode.utf8.upper },
-   { "[.?!]\\s+\\p{Ll}",       unicode.utf8.upper },
-   { "\\bi\\b",                unicode.utf8.upper },
-   { "(\\d+)deg\\b",           u("%1", 0x00b0) },
-   { "\\s{2,}",                " " },
-   { "\\\\u([[:xdigit:]]{4})", function (s) return u(tonumber(s, 16)) end },
-   { "<([uUsS])>(.+?)</\\1>",  combine },
-   { "\\{\\{([^}]+)\\}\\}",    convert_digraphs },
-   { "\\s?,(\\S)",             ", %1" },
-   { "([\\pL\\pN])$",          "%1." }
-}
-
-function setup()
-   weechat.register(
-      "typeass",
-      "rumia <https://github.com/rumia>",
-      "0.1",
-      "WTFPL",
-      "Stupid Type Assistant",
-      "",
-      "")
-
-   if weechat.config_is_set_plugin("buffers") == 1 then
-      buffer_mask = weechat.config_get_plugin("buffers")
-   else
-      weechat.config_set_plugin("buffers", buffer_mask)
-   end
-
-   local opt = weechat.config_get("weechat.completion.nick_completer")
-   nick_completion_char = weechat.config_string(opt)
-
-   weechat.hook_command_run("/input return", "input_handler", "")
-end
-
-function mark_ticks(text)
-   local index = 0
-   -- mark url with ticks
-   text = pcre.gsub(text, "([[:alnum:]-]+://\\S+)", "`%1`", nil, utf8_flag)
-
-   -- mark s/pattern/replacement/ with ticks
-   text = pcre.gsub(text, "^(s/.+?/.+?/)$", "`%1`", nil, utf8_flag)
-
-   return pcre.gsub(text, "`([^`]+)`", function (match)
-      index = index + 1
-      placeholders[index] = match
-      return "\027" .. index .. "\027"
-   end)
-end
-
-function restore_ticks(text)
-   return pcre.gsub(text, "\027(\\d+)\027", function (match)
-      local index = tonumber(match)
-      if placeholders[index] then
-         return placeholders[index]
-      else
-         return ""
-      end
-   end)
-end
-
-function replace_patterns(text)
-   for _, p in ipairs(replacements) do
-      text = pcre.gsub(text, p[1], p[2], nil, utf8_flag)
-   end
-   return text
-end
-
-function input_handler(data, buffer, command)
-   local is_matched = weechat.buffer_match_list(buffer, buffer_mask)
-   if is_matched == 1 then
-      local input = weechat.buffer_get_string(buffer, "input")
-      local nick_completion_part = ""
-
-      if not input:match("^/") or input:match("^/[Mm][Ee][ \t]+") then
-         if nick_completion_char and #nick_completion_char > 0 then
-            local part1, part2 = input:match(
-               "^([^%" .. nick_completion_char .. "]+)" ..
-               nick_completion_char .. "[ \t]*(.+)")
-
-            if part1 and weechat.nicklist_search_nick(buffer, "", part1) ~= "" then
-               nick_completion_part = part1 .. nick_completion_char .. " "
-               input = part2
-            end
-         end
-
-         placeholders = {}
-         input = mark_ticks(input)
-         input = replace_patterns(input)
-         input = restore_ticks(input)
-         placeholders = nil
-
-         weechat.buffer_set(buffer, "input",  nick_completion_part .. input)
-      end
-   end
-   if type(weechat.WEECHAT_RC_OK) == "function" then
-      return weechat.WEECHAT_RC_OK()
-   else
-      return weechat.WEECHAT_RC_OK
-   end
-end
 
 setup()
