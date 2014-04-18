@@ -36,7 +36,12 @@ function combine(tag, text)
    if not g.diacritic_tags[tag] then
       return text
    end
-   return pcre.gsub(text, "(.)", u("%1", g.diacritic_tags[tag]), nil, g.utf8_flag)
+   return pcre.gsub(
+      text,
+      "(.)",
+      u("%1", g.diacritic_tags[tag]),
+      nil,
+      g.utf8_flag)
 end
 
 function convert_digraphs(prefix, code)
@@ -120,6 +125,17 @@ function input_text_display_cb(_, modifier, buffer, text)
    return text
 end
 
+function command_cb(_, buffer, param)
+   if param == "send-original" then
+      local input = w.buffer_get_string(buffer, "input")
+      if input ~= "" then
+         w.buffer_set(buffer, "localvar_set_prettype", input)
+         w.command(buffer, "/input return")
+      end
+   end
+   return w.WEECHAT_RC_OK
+end
+
 function setup()
    assert(
       w.register(
@@ -136,6 +152,14 @@ function setup()
 
    w.hook_command_run("/input return", "input_return_cb", "")
    w.hook_modifier("input_text_display_with_cursor", "input_text_display_cb", "")
+   w.hook_command(
+      g.script.name,
+      "Control prettype script. Currently it only does one thing :)",
+      "send-original",
+      "send-original: Send the original text instead of the modified version",
+      "send-original",
+      "command_cb",
+      "")
 end
 
 g.replacements = {
@@ -180,6 +204,10 @@ g.replacements = {
 }
 
 g.digraphs = {
+-- From RFC 1345 (http://tools.ietf.org/html/rfc1345)
+-- First 96 characters are removed since they are just standard 7bit ASCII
+-- characters.
+
       ["NS"] = 0x00a0, -- NO-BREAK SPACE
       ["!I"] = 0x00a1, -- INVERTED EXCLAMATION MARK
       ["Ct"] = 0x00a2, -- CENT SIGN
@@ -352,8 +380,6 @@ g.digraphs = {
       ["'n"] = 0x0149, -- LATIN SMALL LETTER N PRECEDED BY APOSTROPHE
       ["NG"] = 0x014a, -- LATIN CAPITAL LETTER ENG (Lappish)
       ["ng"] = 0x014b, -- LATIN SMALL LETTER ENG (Lappish)
-      ["NY"] = 0x00d1, -- LATIN CAPITAL LETTER N WITH TILDE
-      ["ny"] = 0x00f1, -- LATIN SMALL LETTER N WITH TILDE
       ["O-"] = 0x014c, -- LATIN CAPITAL LETTER O WITH MACRON
       ["o-"] = 0x014d, -- LATIN SMALL LETTER O WITH MACRON
       ["O("] = 0x014e, -- LATIN CAPITAL LETTER O WITH BREVE

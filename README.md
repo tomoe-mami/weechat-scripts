@@ -4,6 +4,9 @@ These are a few Lua scripts I wrote for [Weechat][].
 
 - **urlselect** is for interactively select URLs in a buffer using a bar.
 
+- **prettype** is for prettifying the text you typed in input bar with 
+  auto-capitalization and proper unicode symbols.
+
 - **chatbuf_color** is for colorizing all lines in a buffer with the same color.
   Useful for merged buffers.
 
@@ -18,8 +21,6 @@ These are a few Lua scripts I wrote for [Weechat][].
 - **mpd_current_song** is bar item for displaying currently playing song on MPD.
   **This is obsolete too since Weechat 0.4.4**. You can do similar thing with a
   timer trigger combined with script text_item.py
-
-- **typeass** is not important. Just ignore it.
 
 [weechat]: http://www.weechat.org
 [xclip]: http://sourceforge.net/projects/xclip/
