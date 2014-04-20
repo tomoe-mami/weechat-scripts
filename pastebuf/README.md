@@ -114,6 +114,3 @@ with `/pastebuf` command. Set to empty string to disable syntax highlighting.
 http://weechat.org/files/doc/devel/weechat_plugin_api.en.html#_weechat_color
 
 
-### Nice to have
-
-- Search inside the content of a paste
