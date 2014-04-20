@@ -7,18 +7,20 @@ local g = {
       name = "prettype",
       author = "tomoe-mami <https://github.com/tomoe-mami>",
       license = "WTFPL",
-      version = "0.2",
+      version = "0.3",
       description = "Prettify text you typed with auto-capitalization and proper unicode symbols"
    },
    config = {
       nick_completer = ":",
+      mode_color = "lightgreen"
    },
    diacritic_tags = {
       s = 0x0336,
       u = 0x0332
    },
    utf8_flag = pcre.flags().UTF8,
-   hooks = {}
+   hooks = {},
+   mode = ""
 }
 
 function u(...)
@@ -44,11 +46,11 @@ function combine(tag, text)
       g.utf8_flag)
 end
 
-function convert_digraphs(prefix, code)
-   if not g.digraphs[code] then
+function convert_mnemonics(prefix, code)
+   if not g.mnemonics[code] then
       return prefix .. code
    else
-      return u(g.digraphs[code])
+      return u(g.mnemonics[code])
    end
 end
 
@@ -72,19 +74,27 @@ function protect_url(text)
       g.utf8_flag)
 end
 
-function protect_nick_completion(text)
+function protect_nick_completion(text, buffer)
    if g.config.nick_completer and g.config.nick_completer ~= "" then
       text = text:gsub(
-         "^([^%s]+%" .. g.config.nick_completer .. "%s+)",
-         "`%1`")
+         "^([^%s]+)(%" .. g.config.nick_completer .. "%s*)",
+         function (nick, suffix)
+            local result = nick .. suffix
+            local nick_ptr = w.nicklist_search_nick(buffer, "", nick)
+            if nick_ptr ~= "" then
+               return "`" .. result .. "`"
+            else
+               return result
+            end
+         end)
    end
    return text
 end
 
-function process(text)
+function process(text, buffer)
    local placeholders, index = {}, 0
    text = protect_url(text)
-   text = protect_nick_completion(text)
+   text = protect_nick_completion(text, buffer)
 
    text = text:gsub("`([^`]+)`", function (s)
       index = index + 1
@@ -119,21 +129,163 @@ end
 
 function input_text_display_cb(_, modifier, buffer, text)
    if w.string_is_command_char(text) ~= 1 then
-      text = process(text)
+      text = process(text, buffer)
       w.buffer_set(buffer, "localvar_set_prettype", text)
    end
    return text
 end
 
+function cmd_send_original(buffer)
+   local input = w.buffer_get_string(buffer, "input")
+   if input ~= "" then
+      w.buffer_set(buffer, "localvar_set_prettype", input)
+      w.command(buffer, "/input return")
+   end
+end
+
+function init_capture_mode(n)
+   if g._fixed_length_param then
+      set_capture_mode(false)
+   else
+      set_capture_mode(true, n)
+   end
+end
+
+function set_capture_mode(flag, buffer, max_chars, callback)
+   if flag and not g._capture_param then
+      g._capture_param = {
+         count = 0,
+         max_chars = max_chars,
+         start_cursor_pos = w.buffer_get_integer(buffer, "input_pos"),
+         callback = callback
+      }
+      g.hooks.capture = {
+         w.hook_command_run("/input *", "capture_cancel_cb", "cmd"),
+         w.hook_signal("buffer_switch", "capture_cancel_cb", "buf"),
+         w.hook_signal("window_switch", "capture_cancel_cb", "win"),
+         w.hook_signal("input_text_changed", "capture_input_cb", ""),
+      }
+   else
+      for _, hook_ptr in ipairs(g.hooks.capture) do
+         w.unhook(hook_ptr)
+      end
+      g.hooks.capture = nil
+      g._capture_param = nil
+      g.mode = nil
+   end
+   w.bar_item_update(g.script.name .. "_mode")
+end
+
+function capture_input_cb(_, _, buffer)
+   local input = w.buffer_get_string(buffer, "input")
+   local param = g._capture_param
+   if not param then
+      return w.WEECHAT_RC_OK
+   end
+
+   if unicode.utf8.len(input) > param.start_cursor_pos and
+      param.count < param.max_chars then
+
+      param.count = param.count + 1
+      if param.count >= param.max_chars then
+         local pos1 = param.start_cursor_pos + 1
+         local pos2 = pos1 + param.max_chars - 1
+         local chars = unicode.utf8.sub(input, pos1, pos2)
+         if unicode.utf8.len(chars) >= param.max_chars then
+            local replacement = param.callback(chars)
+            if replacement then
+               local left = unicode.utf8.sub(input, 1, param.start_cursor_pos) or ""
+               local right = unicode.utf8.sub(input, pos2 + 1) or ""
+               w.buffer_set(buffer, "input", left .. replacement .. right)
+               w.buffer_set(buffer, "input_pos", param.start_cursor_pos + 1)
+            end
+            set_capture_mode(false)
+         end
+      end
+
+   end
+   return w.WEECHAT_RC_OK
+end
+
+function capture_cancel_cb(mode)
+   set_capture_mode(false)
+   if mode == "cmd" then
+      return w.WEECHAT_RC_OK_EAT
+   else
+      return w.WEECHAT_RC_OK
+   end
+end
+
+function cmd_input_mnemonic(buffer, args)
+   if not args or args == "" then
+      args = 2
+   end
+   local max_chars = tonumber(args)
+   if max_chars < 2 or max_chars > 6 then
+      max_chars = 2
+   end
+   g.mode = string.format("Mnemonic (%d)", max_chars)
+   set_capture_mode(true, buffer, max_chars, function (s)
+      if g.mnemonics[s] then
+         return u(g.mnemonics[s])
+      end
+   end)
+end
+
+function cmd_input_codepoint(buffer, args)
+   g.mode = "UTF-8 Codepoint"
+   set_capture_mode(true, buffer, 4, function (s)
+      return convert_codepoint(s)
+   end)
+end
+
 function command_cb(_, buffer, param)
-   if param == "send-original" then
-      local input = w.buffer_get_string(buffer, "input")
-      if input ~= "" then
-         w.buffer_set(buffer, "localvar_set_prettype", input)
-         w.command(buffer, "/input return")
+   local action, args = param:match("^(%S+)%s*(.*)")
+   if action then
+      local callbacks = {
+         ["send-original"] = cmd_send_original,
+         mnemonic = cmd_input_mnemonic,
+         codepoint = cmd_input_codepoint
+      }
+
+      if callbacks[action] then
+         callbacks[action](buffer, args)
       end
    end
    return w.WEECHAT_RC_OK
+end
+
+function bar_item_cb()
+   if not g.mode or g.mode == "" then
+      return ""
+   else
+      return w.color(g.config.mode_color) .. g.mode
+   end
+end
+
+function config_cb(_, opt_name, opt_value)
+   if opt_name == "weechat.completion.nick_completer" then
+      g.config.nick_completer = opt_value
+   elseif opt_name == "plugins.var.lua.prettype.mode_color" then
+      g.config.mode_color = opt_value
+   end
+   return w.WEECHAT_RC_OK
+end
+
+function init_config()
+   local opt = w.config_get("weechat.completion.nick_completer")
+   if opt and opt ~= "" then
+      g.config.nick_completer = w.config_string(opt)
+   end
+
+   if w.config_is_set_plugin("mode_color") ~= 1 then
+      w.config_set_plugin("mode_color", g.config.mode_color)
+   else
+      g.config.mode_color = w.config_get_plugin("mode_color")
+   end
+
+   w.hook_config("weechat.completion.nick_completer", "config_cb", "")
+   w.hook_config("plugins.var.lua.prettype.mode_color", "config_cb", "")
 end
 
 function setup()
@@ -147,26 +299,29 @@ function setup()
          "", ""),
       "Unable to register script. Perhaps it has been loaded before?")
 
-   local opt = w.config_get("weechat.completion.nick_completer")
-   g.nick_completer = w.config_string(opt)
-
+   init_config()
    w.hook_command_run("/input return", "input_return_cb", "")
    w.hook_modifier("input_text_display_with_cursor", "input_text_display_cb", "")
+   w.bar_item_new(g.script.name .. "_mode", "bar_item_cb", "")
    w.hook_command(
       g.script.name,
-      "Control prettype script. Currently it only does one thing :)",
-      "send-original",
-      "send-original: Send the original text instead of the modified version",
-      "send-original",
+      "Control prettype script.",
+      "send-original || mnemonic [<n-chars>] || codepoint",
+[[
+   send-original: Send the original text instead of the modified version.
+        mnemonic: Insert RFC 1345 Character Mnemonics (http://tools.ietf.org/html/rfc1345)
+       codepoint: Insert UTF-8 codepoint
+       <n-chars>: Numbers of character that will be interpreted as mnemonic. If not specified
+                  or if it's out of range (less than 2 or larger than 6) it will fallback to
+                  the default value (2).
+]],
+      "send-original || mnemonic || codepoint",
       "command_cb",
       "")
 end
 
 g.replacements = {
    { "(^\\s+|\\s+$)",                        "" },
-   { "(~!)([^\\s~]+)\\s?",                   convert_digraphs },
-   { "(\\]\\])(..)",                         convert_digraphs },
-   { "\\\\u([[:xdigit:]]{4})",               convert_codepoint },
    { "\\.{3,}",                              u(0x2026, " ")},
    { "-{3}",                                 u(0x2014) },
    { "-{2}",                                 u(0x2013) },
@@ -188,13 +343,19 @@ g.replacements = {
       "^(?:\\x1b\\x10\\d+\\x1b\\x10\\s*|[\"])?\\p{Ll}",
       unicode.utf8.upper
    },
-   { "(^|[-\\x{2014}\\s(\[\"])'",            u("%1", 0x2018) },
+   {
+      "(^(?:\\x1b\\x10\\d+\\x1b\\x10\\s*)?|[-\\x{2014}\\s(\[\"])'",
+      u("%1", 0x2018)
+   },
    { "'",                                    u(0x2019) },
-   { "(^|[-\\x{2014/\\[(\\x{2018}\\s])\"",   u("%1", 0x201c) },
+   {
+      "(^(?:\\x1b\\x10\\d+\\x1b\\x10\\s*)?|[-\\x{2014/\\[(\\x{2018}\\s])\"",
+      u("%1", 0x201c)
+   },
    { "\"",                                   u(0x201d) },
    { "\\bi\\b",                              unicode.utf8.upper },
    {
-      "\\b(?i:(https?|ss[lh]|ftp|ii?rc|fyi|cmiiw|afaik|pebkac|wtf|wth|lol|rofl|ymmv|nih|ama|eli5|mfw|mrw|tl;d[rw]|sasl))\\b",
+      "\\b(?i:(https?|ss[lh]|ftp|ii?rc|fyi|cmiiw|afaik|btw|pebkac|wtf|wth|lol|rofl|ymmv|nih|ama|eli5|mfw|mrw|tl;d[rw]|sasl))\\b",
       unicode.utf8.upper
    },
    { "(\\d+)deg\\b",                         u("%1", 0x00b0) },
@@ -203,9 +364,9 @@ g.replacements = {
    { "\\s{2,}",                              " " },
 }
 
-g.digraphs = {
+g.mnemonics = {
 -- From RFC 1345 (http://tools.ietf.org/html/rfc1345)
--- First 96 characters are removed since they are just standard 7bit ASCII
+-- First 96 mnemonics are removed since they are just standard 7bit ASCII
 -- characters.
 
       ["NS"] = 0x00a0, -- NO-BREAK SPACE
