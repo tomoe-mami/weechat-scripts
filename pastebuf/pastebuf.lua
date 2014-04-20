@@ -145,6 +145,11 @@ local g = {
          pattern = "^([^:/]+://[^/]+)/(%w+)",
          id = "%2",
          raw = "%1/%2?raw"
+      },
+      ["paste.is"] = {
+         pattern = "^([^:/]+://[^/]+)/(%w+)",
+         id = "%2",
+         raw = "%1/%2/raw/"
       }
    },
    keys = {
@@ -1225,9 +1230,11 @@ function config_cb(_, opt_name, opt_value)
          if g.config[name] < 2 then
             g.sites["fpaste.org"].handler = handler_sticky_notes
             g.sites["pastebin.osuosl.org"].handler = handler_sticky_notes
+            g.sites["paste.is"].handler = handler_sticky_notes
          else
             g.sites["fpaste.org"].handler = nil
             g.sites["pastebin.osuosl.org"].handler = nil
+            g.sites["paste.is"].handler = nil
          end
       elseif name == "syntax_highlighter" then
          if g.config[name] == "" then
@@ -1312,6 +1319,7 @@ function setup()
       if g.config.sticky_notes_retardness_level < 2 then
          g.sites["fpaste.org"].handler = handler_sticky_notes
          g.sites["pastebin.osuosl.org"].handler = handler_sticky_notes
+         g.sites["paste.is"].handler = handler_sticky_notes
       end
    end
    g.sites["pastie.org"].handler = handler_pastie
@@ -1335,6 +1343,7 @@ function setup()
       local entry = name
       if name == "gist.github.com" or
          name == "fpaste.org" or
+         name == "paste.is" or
          name == "pastebin.osuosl.org" then
          local flag = (info.handler and "with" or "no")
          entry = string.format("%s (%s API)", entry, flag)

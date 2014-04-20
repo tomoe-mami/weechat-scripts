@@ -18,6 +18,7 @@ Supported sites:
 - pastie.org
 - sprunge.us
 - vpaste.net
+- paste.is
 
 For gist with multiple files, only the first file in a gist will be fetch. To
 enable fetching multiple files, you have to install [lua-cjson][] module.
