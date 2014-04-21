@@ -11,8 +11,17 @@ local g = {
       description = "Prettify text you typed with auto-capitalization and proper unicode symbols"
    },
    config = {
-      nick_completer = ":",
-      mode_color = "lightgreen"
+      nick_completer = ":"
+   },
+   defaults = {
+      mode_color = {
+         value = "lightgreen",
+         description = "Color for current input mode"
+      },
+      escape_color = {
+         value = "magenta",
+         description = "Color for escaped text"
+      }
    },
    diacritic_tags = {
       s = 0x0336,
@@ -58,6 +67,17 @@ function convert_codepoint(s)
    return u(tonumber(s, 16))
 end
 
+function title_case(s)
+   return pcre.gsub(
+      s,
+      "(?<=^|[^\\pL\\pN])(\\pL)",
+      function (char)
+         return unicode.utf8.upper(char)
+      end,
+      nil,
+      g.utf8_flag)
+end
+
 function replace_patterns(text)
    for _, p in ipairs(g.replacements) do
       text = pcre.gsub(text, p[1], p[2], nil, g.utf8_flag)
@@ -91,29 +111,43 @@ function protect_nick_completion(text, buffer)
    return text
 end
 
-function process(text, buffer)
+function hash_backticks(text)
    local placeholders, index = {}, 0
-   text = protect_url(text)
-   text = protect_nick_completion(text, buffer)
-
    text = text:gsub("`([^`]+)`", function (s)
       index = index + 1
       placeholders[index] = s
       return "\027\016" .. index .. "\027\016"
    end)
+   return text, placeholders
+end
 
-   text = replace_patterns(text)
-
+function unhash(text, placeholders)
    text = text:gsub("\027\016(%d+)\027\016", function (i)
       i = tonumber(i)
-      return placeholders[i] or ""
+      if placeholders[i] then
+         return w.color(g.config.escape_color) ..
+                placeholders[i] ..
+                w.color("reset")
+      else
+         return ""
+      end
    end)
+   return text
+end
+
+function process(text, buffer)
+   local placeholders
+   text = protect_url(text)
+   text = protect_nick_completion(text, buffer)
+   text, placeholders = hash_backticks(text)
+   text = replace_patterns(text)
+   text = unhash(text, placeholders)
 
    return text
 end
 
 function remove_weechat_escapes(text)
-   text = pcre.gsub(text, "\\x19(b[FDBl_#-]|E|\\x1c|[FB*]?[*!/_|]?(\\d{2}|@\\d{5})(,(\\d{2}|@\\d{5}))?)", "")
+   text = pcre.gsub(text, "(\\x19(b[FDBl_#-]|E|\\x1c|[FB*]?[*!/_|]?(\\d{2}|@\\d{5})(,(\\d{2}|@\\d{5}))?)|[\\x1A\\x1B].|\\x1C)", "")
    return text
 end
 
@@ -266,8 +300,11 @@ end
 function config_cb(_, opt_name, opt_value)
    if opt_name == "weechat.completion.nick_completer" then
       g.config.nick_completer = opt_value
-   elseif opt_name == "plugins.var.lua.prettype.mode_color" then
-      g.config.mode_color = opt_value
+   else
+      local name = opt_name:match("^plugins.var.lua." .. g.script.name .. ".(.+)$")
+      if g.defaults[name] then
+         g.config[name] = opt_value
+      end
    end
    return w.WEECHAT_RC_OK
 end
@@ -278,14 +315,17 @@ function init_config()
       g.config.nick_completer = w.config_string(opt)
    end
 
-   if w.config_is_set_plugin("mode_color") ~= 1 then
-      w.config_set_plugin("mode_color", g.config.mode_color)
-   else
-      g.config.mode_color = w.config_get_plugin("mode_color")
+   for name, info in pairs(g.defaults) do
+      if w.config_is_set_plugin(name) ~= 1 then
+         w.config_set_plugin(name, info.value)
+         w.config_set_desc_plugin(name, info.description)
+         g.config[name] = info.value
+      else
+         g.config[name] = w.config_get_plugin(name)
+      end
    end
-
    w.hook_config("weechat.completion.nick_completer", "config_cb", "")
-   w.hook_config("plugins.var.lua.prettype.mode_color", "config_cb", "")
+   w.hook_config("plugins.var.lua." .. g.script.name .. ".*", "config_cb", "")
 end
 
 function setup()
@@ -358,6 +398,7 @@ g.replacements = {
       "\\b(?i:(https?|ss[lh]|ftp|ii?rc|fyi|cmiiw|afaik|btw|pebkac|wtf|wth|lol|rofl|ymmv|nih|ama|eli5|mfw|mrw|tl;d[rw]|sasl))\\b",
       unicode.utf8.upper
    },
+   { "\\b(?i:dr|mr|mrs|prof)\\.",            title_case },
    { "(\\d+)deg\\b",                         u("%1", 0x00b0) },
    { "\\x{00b0}\\s*[cf]\\b",                 unicode.utf8.upper },
    { "<([us])>(.+?)</\\1>",                  combine },
@@ -368,6 +409,13 @@ g.mnemonics = {
 -- From RFC 1345 (http://tools.ietf.org/html/rfc1345)
 -- First 96 mnemonics are removed since they are just standard 7bit ASCII
 -- characters.
+
+-- extra ------------------------------------------------------------------------
+
+      ["N~"] = 0x00d1, -- LATIN CAPITAL LETTER N WITH TILDE
+      ["n~"] = 0x00f1, -- LATIN SMALL LETTER N WITH TILDE
+
+-- standard ---------------------------------------------------------------------
 
       ["NS"] = 0x00a0, -- NO-BREAK SPACE
       ["!I"] = 0x00a1, -- INVERTED EXCLAMATION MARK
