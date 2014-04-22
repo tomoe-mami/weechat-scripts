@@ -14,6 +14,13 @@ local g = {
       nick_completer = ":"
    },
    defaults = {
+      buffers = {
+         value = "irc.*,!irc.server.*,!*.nickserv,!*.chanserv",
+         description =
+            "A comma separated list of buffers where script will be active. " ..
+            "Wildcard (*) is allowed. Prefix an entry with ! to exclude " ..
+            "any buffer that matched with it."
+      },
       mode_color = {
          value = "lightgreen",
          description = "Color for current input mode"
@@ -55,18 +62,6 @@ function combine(tag, text)
       g.utf8_flag)
 end
 
-function convert_mnemonics(prefix, code)
-   if not g.mnemonics[code] then
-      return prefix .. code
-   else
-      return u(g.mnemonics[code])
-   end
-end
-
-function convert_codepoint(s)
-   return u(tonumber(s, 16))
-end
-
 function title_case(s)
    return pcre.gsub(
       s,
@@ -85,11 +80,15 @@ function replace_patterns(text)
    return text
 end
 
+function is_valid_buffer(buffer)
+   return w.buffer_match_list(buffer, g.config.buffers) == 1
+end
+
 function protect_url(text)
    return pcre.gsub(
       text,
       "(^|\\s)([a-z][a-z0-9-]+://)([-a-zA-Z0-9+&@#/%?=~_|\\[\\]\\(\\)!:,\\.;]*[-a-zA-Z0-9+&@#/%=~_|\\[\\]])?($|\\W)",
-      "%1`%2%3`%4",
+      "%1\027\005%2%3\027\005%4",
       nil,
       g.utf8_flag)
 end
@@ -102,7 +101,7 @@ function protect_nick_completion(text, buffer)
             local result = nick .. suffix
             local nick_ptr = w.nicklist_search_nick(buffer, "", nick)
             if nick_ptr ~= "" then
-               return "`" .. result .. "`"
+               return "\027\005" .. result .. "\027\005"
             else
                return result
             end
@@ -111,27 +110,37 @@ function protect_nick_completion(text, buffer)
    return text
 end
 
-function hash_backticks(text)
+function hash(text)
    local placeholders, index = {}, 0
-   text = text:gsub("`([^`]+)`", function (s)
-      index = index + 1
-      placeholders[index] = s
-      return "\027\016" .. index .. "\027\016"
-   end)
+   text = pcre.gsub(
+      text,
+      "\\x1b\\x05([^\\x1b]+|\\x1b(?!\\x05))\\x1b\\x05",
+      function (s)
+         index = index + 1
+         placeholders[index] = s
+         return "\027\016" .. index .. "\027\016"
+      end,
+      nil,
+      g.utf8_flag)
    return text, placeholders
 end
 
 function unhash(text, placeholders)
-   text = text:gsub("\027\016(%d+)\027\016", function (i)
-      i = tonumber(i)
-      if placeholders[i] then
-         return w.color(g.config.escape_color) ..
-                placeholders[i] ..
-                w.color("reset")
-      else
-         return ""
-      end
-   end)
+   text = pcre.gsub(
+      text,
+      "\\x1b\\x10(\\d+)\\x1b\\x10",
+      function (i)
+         i = tonumber(i)
+         if not placeholders[i] then
+             return ""
+          else
+            return w.color(g.config.escape_color) ..
+                   placeholders[i] ..
+                   w.color("reset")
+          end
+      end,
+      nil,
+      g.utf8_flag)
    return text
 end
 
@@ -139,7 +148,7 @@ function process(text, buffer)
    local placeholders
    text = protect_url(text)
    text = protect_nick_completion(text, buffer)
-   text, placeholders = hash_backticks(text)
+   text, placeholders = hash(text)
    text = replace_patterns(text)
    text = unhash(text, placeholders)
 
@@ -152,19 +161,21 @@ function remove_weechat_escapes(text)
 end
 
 function input_return_cb(_, buffer, cmd)
-   local current_input = w.buffer_get_string(buffer, "input")
-   if w.string_is_command_char(current_input) ~= 1 then
-      local text = w.buffer_get_string(buffer, "localvar_prettype")
-      text = remove_weechat_escapes(text)
-      w.buffer_set(buffer, "input", text)
+   if is_valid_buffer(buffer) then
+      local current_input = w.buffer_get_string(buffer, "input")
+      if w.string_is_command_char(current_input) ~= 1 then
+         local text = w.buffer_get_string(buffer, "localvar_" .. g.script.name)
+         text = remove_weechat_escapes(text)
+         w.buffer_set(buffer, "input", text)
+      end
    end
    return w.WEECHAT_RC_OK
 end
 
 function input_text_display_cb(_, modifier, buffer, text)
-   if w.string_is_command_char(text) ~= 1 then
+   if is_valid_buffer(buffer) and w.string_is_command_char(text) ~= 1 then
       text = process(text, buffer)
-      w.buffer_set(buffer, "localvar_set_prettype", text)
+      w.buffer_set(buffer, "localvar_set_" .. g.script.name, text)
    end
    return text
 end
@@ -174,6 +185,13 @@ function cmd_send_original(buffer)
    if input ~= "" then
       w.buffer_set(buffer, "localvar_set_prettype", input)
       w.command(buffer, "/input return")
+   end
+end
+
+function cmd_print_original(buffer)
+   local input = w.buffer_get_string(buffer, "input")
+   if input ~= "" then
+      w.print(buffer, g.script.name .. "\t" .. input)
    end
 end
 
@@ -269,21 +287,29 @@ end
 function cmd_input_codepoint(buffer, args)
    g.mode = "UTF-8 Codepoint"
    set_capture_mode(true, buffer, 4, function (s)
-      return convert_codepoint(s)
+      return u(tonumber(s, 16))
    end)
 end
 
-function command_cb(_, buffer, param)
-   local action, args = param:match("^(%S+)%s*(.*)")
-   if action then
-      local callbacks = {
-         ["send-original"] = cmd_send_original,
-         mnemonic = cmd_input_mnemonic,
-         codepoint = cmd_input_codepoint
-      }
+function cmd_insert_escape(buffer, args)
+   w.command(buffer, "/input insert \\x1b\\x05")
+end
 
-      if callbacks[action] then
-         callbacks[action](buffer, args)
+function command_cb(_, buffer, param)
+   if is_valid_buffer(buffer) then
+      local action, args = param:match("^(%S+)%s*(.*)")
+      if action then
+         local callbacks = {
+            ["send-original"] = cmd_send_original,
+            ["print-original"] = cmd_print_original,
+            mnemonic = cmd_input_mnemonic,
+            codepoint = cmd_input_codepoint,
+            escape = cmd_insert_escape
+         }
+
+         if callbacks[action] then
+            callbacks[action](buffer, args)
+         end
       end
    end
    return w.WEECHAT_RC_OK
@@ -345,17 +371,20 @@ function setup()
    w.bar_item_new(g.script.name .. "_mode", "bar_item_cb", "")
    w.hook_command(
       g.script.name,
-      "Control prettype script.",
-      "send-original || mnemonic [<n-chars>] || codepoint",
+      "Control " .. g.script.name .. " script.",
+      "send-original || print-original || mnemonic [<n-chars>] || codepoint || escape",
 [[
    send-original: Send the original text instead of the modified version.
+  print-original: Print the original text to current buffer.
         mnemonic: Insert RFC 1345 Character Mnemonics (http://tools.ietf.org/html/rfc1345)
        codepoint: Insert UTF-8 codepoint
+          escape: Insert escape marker. To prevent script from modifying a portion of
+                  text, you have to enclose it with this marker.
        <n-chars>: Numbers of character that will be interpreted as mnemonic. If not specified
                   or if it's out of range (less than 2 or larger than 6) it will fallback to
                   the default value (2).
 ]],
-      "send-original || mnemonic || codepoint",
+      "send-original || print-original || mnemonic || codepoint || escape",
       "command_cb",
       "")
 end
