@@ -88,7 +88,7 @@ function protect_url(text)
    return pcre.gsub(
       text,
       "(^|\\s)([a-z][a-z0-9-]+://)([-a-zA-Z0-9+&@#/%?=~_|\\[\\]\\(\\)!:,\\.;]*[-a-zA-Z0-9+&@#/%=~_|\\[\\]])?($|\\W)",
-      "%1\027\005%2%3\027\005%4",
+      "%1\016\022%2%3\016\022%4",
       nil,
       g.utf8_flag)
 end
@@ -101,7 +101,7 @@ function protect_nick_completion(text, buffer)
             local result = nick .. suffix
             local nick_ptr = w.nicklist_search_nick(buffer, "", nick)
             if nick_ptr ~= "" then
-               return "\027\005" .. result .. "\027\005"
+               return "\016\022" .. result .. "\016\022"
             else
                return result
             end
@@ -114,11 +114,11 @@ function hash(text)
    local placeholders, index = {}, 0
    text = pcre.gsub(
       text,
-      "\\x1b\\x05([^\\x1b]+|\\x1b(?!\\x05))\\x1b\\x05",
+      "\\x10\\x16([^\\x10]+|\\x10(?!\\x16))\\x10\\x16",
       function (s)
          index = index + 1
          placeholders[index] = s
-         return "\027\016" .. index .. "\027\016"
+         return "\016\023" .. index .. "\016\023"
       end,
       nil,
       g.utf8_flag)
@@ -128,7 +128,7 @@ end
 function unhash(text, placeholders)
    text = pcre.gsub(
       text,
-      "\\x1b\\x10(\\d+)\\x1b\\x10",
+      "\\x10\\x17(\\d+)\\x10\\x17",
       function (i)
          i = tonumber(i)
          if not placeholders[i] then
@@ -248,8 +248,9 @@ function capture_input_cb(_, _, buffer)
             if replacement then
                local left = unicode.utf8.sub(input, 1, param.start_cursor_pos) or ""
                local right = unicode.utf8.sub(input, pos2 + 1) or ""
+               local new_pos = param.start_cursor_pos + unicode.utf8.len(replacement)
                w.buffer_set(buffer, "input", left .. replacement .. right)
-               w.buffer_set(buffer, "input_pos", param.start_cursor_pos + 1)
+               w.buffer_set(buffer, "input_pos", new_pos)
             end
             set_capture_mode(false)
          end
@@ -273,7 +274,7 @@ function cmd_input_mnemonic(buffer, args)
       args = 2
    end
    local max_chars = tonumber(args)
-   if max_chars < 2 or max_chars > 6 then
+   if max_chars < 2 then
       max_chars = 2
    end
    g.mode = string.format("Mnemonic (%d)", max_chars)
@@ -292,7 +293,7 @@ function cmd_input_codepoint(buffer, args)
 end
 
 function cmd_insert_escape(buffer, args)
-   w.command(buffer, "/input insert \\x1b\\x05")
+   w.command(buffer, "/input insert \\x10\\x16")
 end
 
 function command_cb(_, buffer, param)
@@ -409,16 +410,16 @@ g.replacements = {
    { "(\\d+)\\s*x\\s*(\\d+)",                u("%1 ", 0x00d7, " %2") },
    { "[.?!][\\s\"]+\\p{Ll}",                 unicode.utf8.upper },
    {
-      "^(?:\\x1b\\x10\\d+\\x1b\\x10\\s*|[\"])?\\p{Ll}",
+      "^(?:\\x10\\x17\\d+\\x10\\x17\\s*|[\"])?\\p{Ll}",
       unicode.utf8.upper
    },
    {
-      "(^(?:\\x1b\\x10\\d+\\x1b\\x10\\s*)?|[-\\x{2014}\\s(\[\"])'",
+      "(^(?:\\x10\\x17\\d+\\x10\\x17\\s*)?|[-\\x{2014}\\s(\[\"])'",
       u("%1", 0x2018)
    },
    { "'",                                    u(0x2019) },
    {
-      "(^(?:\\x1b\\x10\\d+\\x1b\\x10\\s*)?|[-\\x{2014/\\[(\\x{2018}\\s])\"",
+      "(^(?:\\x10\\x17\\d+\\x10\\x17\\s*)?|[-\\x{2014/\\[(\\x{2018}\\s])\"",
       u("%1", 0x201c)
    },
    { "\"",                                   u(0x201d) },
