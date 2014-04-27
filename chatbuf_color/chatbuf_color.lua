@@ -77,19 +77,70 @@ function message(s)
 end
 
 function command_cb(_, buffer, param)
-   if not param or param == "" then
-      param = "shuffle"
+   local action, args = param:match("^([^%s]+)%s*(.*)")
+   if not action or action == "" then
+      action = "shuffle"
    end
 
-   local action, args = param:match("^([^%s]+)%s*(.*)")
-   if not action then
-      return w.WEECHAT_RC_OK
-   elseif action == "shuffle" then
-      return action_shuffle_colors()
-   elseif action == "set" then
-      return action_set_custom_color(buffer, args)
-   elseif action == "unset" then
-      return action_unset_custom_color(buffer, args)
+   local callbacks = {
+      shuffle = action_shuffle_colors,
+      set = action_set_custom_color,
+      unset = action_unset_custom_color
+   }
+
+   if callbacks[action] then
+      return callbacks[action](buffer, args)
+   else
+      message("Unknown action: " .. action)
+      return w.WEECHAT_RC_ERROR
+   end
+end
+
+function all_lines(buffer)
+   local source = w.hdata_pointer(w.hdata_get("buffer"), buffer, "own_lines")
+   if not source or source == "" then
+      return
+   end
+   local h_line = w.hdata_get("line")
+   local first_run = true
+   local line line = w.hdata_pointer(w.hdata_get("lines"), source, "first_line")
+   if not line or line == "" then
+      return
+   end
+   return function ()
+      if first_run then
+         first_run = false
+      else
+         line = w.hdata_move(h_line, line, 1)
+         if not line or line == "" then
+            return
+         end
+      end
+      return w.hdata_pointer(h_line, line, "data")
+   end
+end
+
+function get_tags_from_line_data(h, line_data)
+   local tags = {}
+   local tag_count = w.hdata_get_var_array_size(h, line_data, "tags_array")
+   if tag_count > 0 then
+      for i = 0, tag_count - 1 do
+         local tag_name = w.hdata_string(h, line_data, i .. "|tags_array")
+         tags[tag_name] = true
+      end
+   end
+   return tags
+end
+
+function colorize_all_lines(buffer, color)
+   local h_line_data = w.hdata_get("line_data")
+   for line in all_lines(buffer) do
+      local tags = get_tags_from_line_data(h_line_data, line)
+      if tags.notify_message then
+         local message = w.hdata_string(h_line_data, line, "message")
+         message = w.color(color) .. w.string_remove_color(message, "")
+         w.hdata_update(h_line_data, line, { message = message })
+      end
    end
 end
 
@@ -222,18 +273,29 @@ function is_chat_buffer(buffer)
    end
 end
 
-function assign_colors_to_opened_buffers(reassign)
+function all_buffers()
    local buf_list = w.infolist_get("buffer", "", "")
    if not buf_list or buf_list == "" then
       return
    end
-   while w.infolist_next(buf_list) == 1 do
-      local buffer = w.infolist_pointer(buf_list, "pointer")
+   return function ()
+      if w.infolist_next(buf_list) ~= 1 then
+         w.infolist_free(buf_list)
+      else
+         return w.infolist_pointer(buf_list, "pointer")
+      end
+   end
+end
+
+function assign_colors_to_opened_buffers(reassign)
+   for buffer in all_buffers() do
       if is_chat_buffer(buffer) then
          local color = w.buffer_get_string(buffer, "localvar_color")
          if not color or color == "" or reassign then
-            w.buffer_set(buffer, "localvar_set_color", get_color(buffer))
+            color = get_color(buffer)
+            w.buffer_set(buffer, "localvar_set_color", color)
          end
+         colorize_all_lines(buffer, color)
       end
    end
 end
@@ -277,7 +339,9 @@ end
 function print_cb(_, modifier, data, text)
    local plugin_name, buffer_name, tags = data:match("([^;]+);([^;]+);(.+)")
    tags = "," .. (tags or "") .. ","
-   if not plugin_name or not buffer_name then
+   if not plugin_name or
+      not buffer_name or
+      not tags:match(",notify_message,") then
       return text
    end
 
@@ -304,7 +368,7 @@ function print_cb(_, modifier, data, text)
                   right = actual_message
                end
             end
-            return left .. w.color(color) .. right
+            return left .. w.color(color) .. w.string_remove_color(right, "")
           end
       end
    end
