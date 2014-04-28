@@ -39,6 +39,16 @@ local g = {
             "Type of name to use inside urlselect_buffer_name item. " ..
             "Valid values are \"full\", \"normal\", and \"short\""
       },
+      ignore_duplicate = {
+         type = "boolean",
+         value = "0",
+         description = "Ignore duplicate URLs"
+      },
+      use_simple_matching = {
+         type = "boolean",
+         value = "0",
+         description = "Use simple pattern matching when scanning for URLs"
+      },
       url_color = {
          type = "string",
          value = "_lightblue",
@@ -1006,13 +1016,46 @@ function command_cb(_, buffer, param)
    end
 end
 
+function remove_delimiter(x1, x2, url, msg)
+   local end_char, remove_last_char = url:sub(-1), false
+   if end_char:match("[%.,;:]") then
+      remove_last_char = true
+   elseif x1 > 1 and end_char:match("[%)%]%>%}`\"\']") then
+      local pos = x1 - 1
+      local pre_char = msg:sub(pos, pos)
+      if (pre_char == "(" and end_char == ")") or
+         (pre_char == "[" and end_char == "]") or
+         (pre_char == "<" and end_char == ">") or
+         (pre_char == "{" and end_char == "}") or
+         (pre_char == "`" and end_char == "`") or
+         (pre_char == "'" and end_char == "'") or
+         (pre_char == "\"" and end_char == "\"") then
+         remove_last_char = true
+      end
+   end
+   if remove_last_char then
+      x2 = x2 - 1
+      url = url:sub(1, #url - 1)
+   end
+   return x1, x2, url
+end
+
 function process_urls_in_message(msg, callback)
-   local pattern = "([%w%+%.%-]+://[%w:!/#_~@&=,;%+%?%[%]%.%%%(%)%-]+)"
+   local pattern
+   if g.config.use_simple_matching then
+      pattern = "([%w%+%.%-]+://[%w:!/#_~@&=,;%+%?%[%]%.%%%(%)%-]+)"
+   else
+      pattern = "([%w%+%.%-]+://[^%s]+)"
+   end
+
    msg = w.string_remove_color(msg, "")
    local x1, x2, count = 1, 0, 0
    while x1 and x2 do
       x1, x2, url = msg:find(pattern, x2 + 1)
       if x1 and x2 and url then
+         if not g.config.use_simple_matching then
+            x1, x2, url = remove_delimiter(x1, x2, url, msg)
+         end
          count = count + 1
          local msg2
          if g.config.url_color then
@@ -1078,18 +1121,21 @@ function collect_urls(buffer, mode)
       return
    end
 
-   local index, info = 0, {}
+   local index, info, collected = 0, {}, {}
    local list = w.infolist_new()
    local line = w.hdata_pointer(w.hdata_get("lines"), source, "first_line")
    local h_line = w.hdata_get("line")
    local h_line_data = w.hdata_get("line_data")
 
    local add_cb = function (url, msg)
-      index = index + 1
-      info.index = index
-      info.url = url
-      info.message = msg
-      create_new_url_entry(list, info)
+      if not collected[url] then
+         collected[url] = true
+         index = index + 1
+         info.index = index
+         info.url = url
+         info.message = msg
+         create_new_url_entry(list, info)
+      end
    end
 
    local get_info_from_current_line = function (data)
