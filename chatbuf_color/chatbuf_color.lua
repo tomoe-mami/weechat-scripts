@@ -132,13 +132,45 @@ function get_tags_from_line_data(h, line_data)
    return tags
 end
 
+function remove_initial_color(text)
+   -- can't do /^(subpattern)+/ nor /(alt|option)/ in standard lua pattern.
+   -- we have to do it the ugly way.
+   local attr, count, n = "[%*!/_|]"
+   local patterns = {
+      "^\025%d%d",
+      "^\025@%d%d%d%d%d",
+      "^\025F" .. attr .. "?%d%d",
+      "^\025F@" .. attr .. "?%d%d%d%d%d",
+      "^\025B%d%d",
+      "^\025B@" .. attr .. "?%d%d%d%d%d",
+      "^\025%*" .. attr .. "?%d%d",
+      "^\025%*@" .. attr .. "?%d%d%d%d%d",
+      "^\025%*" .. attr .. "?%d%d,%d%d",
+      "^\025%*" .. attr .. "?%d%d,@%d%d%d%d%d",
+      "^\025%*@" .. attr .. "?%d%d%d%d%d,%d%d",
+      "^\025%*@" .. attr .. "?%d%d%d%d%d,@%d%d%d%d%d",
+      "^\025E",
+      "^\025\028",
+      "^[\025\027]" .. attr,
+      "^\028"
+   }
+   repeat
+      count, n = 0, 0
+      for _, pattern in ipairs(patterns) do
+         text, n = text:gsub(pattern, "")
+         count = count + n
+      end
+   until count == 0
+   return text
+end
+
 function colorize_all_lines(buffer, color)
    local h_line_data = w.hdata_get("line_data")
    for line in all_lines(buffer) do
       local tags = get_tags_from_line_data(h_line_data, line)
-      if tags.notify_message then
+      if tags.log1 then
          local message = w.hdata_string(h_line_data, line, "message")
-         message = w.color(color) .. w.string_remove_color(message, "")
+         message = w.color(color) .. remove_initial_color(message)
          w.hdata_update(h_line_data, line, { message = message })
       end
    end
@@ -341,7 +373,7 @@ function print_cb(_, modifier, data, text)
    tags = "," .. (tags or "") .. ","
    if not plugin_name or
       not buffer_name or
-      not tags:match(",notify_message,") then
+      not tags:match(",log1,") then
       return text
    end
 
@@ -368,7 +400,7 @@ function print_cb(_, modifier, data, text)
                   right = actual_message
                end
             end
-            return left .. w.color(color) .. w.string_remove_color(right, "")
+            return left .. w.color(color) .. remove_initial_color(right)
           end
       end
    end
