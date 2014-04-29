@@ -196,7 +196,7 @@ function cmd_print_original(buffer)
 end
 
 function init_capture_mode(n)
-   if g._fixed_length_param then
+   if g._capture_param then
       set_capture_mode(false)
    else
       set_capture_mode(true, n)
