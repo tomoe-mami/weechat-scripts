@@ -2,7 +2,7 @@ local w = weechat
 local g = {
    script = {
       name = "urlselect",
-      version = "0.2",
+      version = "0.3",
       author = "tomoe-mami <https://github.com/tomoe-mami>",
       license = "WTFPL",
       description = "A bar for selecting URLs"
@@ -198,8 +198,8 @@ function setup()
       "Unable to register script. Perhaps it's already loaded before?")
 
    local wee_ver = tonumber(w.info_get("version_number", "") or 0)
-   if wee_ver < 0x00040400 then
-      error("This script requires WeeChat v0.4.4 or higher")
+   if wee_ver < 0x01000000 then
+      error("This script requires WeeChat v1.0 or higher")
    end
 
    local first_run, total_cmd = init_config()
@@ -496,7 +496,7 @@ end
 
 function new_line_cb(buffer, evbuf, date, tags,
                      displayed, highlighted, prefix, message)
-   if displayed == "1" and g.list and g.list ~= "" then
+   if displayed == 1 and g.list and g.list ~= "" then
       if g.config.scan_merged_buffers then
          local evbuf_num = w.buffer_get_integer(evbuf, "number")
          local buf_num = w.buffer_get_integer(buffer, "number")
@@ -518,7 +518,7 @@ function new_line_cb(buffer, evbuf, date, tags,
       data.prefix = w.string_remove_color(prefix, "")
       data.message = message
       data.time = tonumber(date)
-      data.highlighted = tonumber(highlighted)
+      data.highlighted = highlighted
       data.buffer_full_name = w.buffer_get_string(evbuf, "full_name")
       data.buffer_name = w.buffer_get_string(evbuf, "name")
       data.buffer_short_name = w.buffer_get_string(evbuf, "short_name")
