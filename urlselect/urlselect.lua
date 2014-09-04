@@ -2,10 +2,10 @@ local w = weechat
 local g = {
    script = {
       name = "urlselect",
-      version = "0.3",
+      version = "0.4",
       author = "tomoe-mami <https://github.com/tomoe-mami>",
       license = "WTFPL",
-      description = "A bar for selecting URLs"
+      description = "Interactively select URL"
    },
    defaults = {
       scan_merged_buffers = {
@@ -38,11 +38,6 @@ local g = {
          description =
             "Type of name to use inside urlselect_buffer_name item. " ..
             "Valid values are \"full\", \"normal\", and \"short\""
-      },
-      ignore_duplicate = {
-         type = "boolean",
-         value = "0",
-         description = "Ignore duplicate URLs"
       },
       use_simple_matching = {
          type = "boolean",
@@ -136,7 +131,7 @@ local g = {
    active = false,
    list = "",
    bar_items = { 
-      list = { "index", "nick", "url", "time",
+      list = { "index", "nick", "url", "time", "duplicate",
                "message", "buffer_name", "buffer_number"},
       extra = { "title", "help", "status", "search"}
    },
@@ -186,6 +181,19 @@ function unload_cb()
    end
 end
 
+function get_default_open_command()
+   local p, s = io.popen("uname -s")
+   if p then
+      s = p:read("*l")
+      p:close()
+   end
+   if s and s == "Darwin" then
+      return "open"
+   else
+      return "xdg-open"
+   end
+end
+
 function setup()
    assert(
       w.register(
@@ -206,8 +214,11 @@ function setup()
    setup_hooks()
    if total_cmd == 0 and first_run then
       print("No custom commands configured. Adding default custom command...")
-      w.config_set_plugin("cmd.o", "/exec -bg -nosh xdg-open ${url}")
+      local open_cmd = get_default_open_command()
+      w.config_set_plugin("cmd.o", "/exec -bg -nosh " .. open_cmd .. " ${url}")
+      w.config_set_plugin("label.o", open_cmd)
       w.config_set_plugin("cmd.i", "/input insert ${url}\\x20")
+      w.config_set_plugin("label.i", "insert into input bar")
    end
    setup_bar()
 
@@ -326,7 +337,7 @@ function set_custom_command(key, cmd, label, silent)
          end
          if not silent then
             print(
-               "Key ${color:bold}${key}${color:-bold} bound to command: " ..
+               "Key ${color:bold}alt-${key}${color:-bold} bound to command: " ..
                "${color:bold}${cmd}${color:-bold}",
                { key = key, cmd = cmd })
          end
@@ -554,7 +565,7 @@ function cmd_action_activate(buffer, args)
          g.scan_mode = g.config.scan_merged_buffers and "merged" or "current"
       end
 
-      g.list = collect_urls(buffer, g.scan_mode)
+      g.list, g.duplicates = collect_urls(buffer, g.scan_mode)
       if g.list and g.list ~= "" then
 
          g.hooks.switch = w.hook_signal(
@@ -598,6 +609,7 @@ function cmd_action_deactivate(buffer)
       deactivate_search(buffer)
       set_keys(buffer, "normal", false)
       set_status()
+      g.duplicates = nil
       if g.list and g.list ~= "" then
          w.infolist_free(g.list)
          g.list = nil
@@ -1121,21 +1133,22 @@ function collect_urls(buffer, mode)
       return
    end
 
-   local index, info, collected = 0, {}, {}
+   local index, info, duplicates = 0, {}, {}
    local list = w.infolist_new()
    local line = w.hdata_pointer(w.hdata_get("lines"), source, "first_line")
    local h_line = w.hdata_get("line")
    local h_line_data = w.hdata_get("line_data")
 
    local add_cb = function (url, msg)
-      if not collected[url] then
-         collected[url] = true
-         index = index + 1
-         info.index = index
-         info.url = url
-         info.message = msg
-         create_new_url_entry(list, info)
+      if not duplicates[url] then
+         duplicates[url] = {}
       end
+      index = index + 1
+      table.insert(duplicates[url], index)
+      info.index = index
+      info.url = url
+      info.message = msg
+      create_new_url_entry(list, info)
    end
 
    local get_info_from_current_line = function (data)
@@ -1208,7 +1221,7 @@ function collect_urls(buffer, mode)
    else
       g.last_index = index
    end
-   return list
+   return list, duplicates
 end
 
 function default_item_handler(name, color_key)
@@ -1246,6 +1259,24 @@ function item_buffer_name_cb()
       key = "buffer_name"
    end
    return default_item_handler(key, "buffer_name_color")
+end
+
+function item_duplicate_cb()
+   local result = ""
+   if g.duplicates then
+      local url = w.infolist_string(g.list, "url")
+      local index = w.infolist_integer(g.list, "index")
+      if g.duplicates[url] then
+         local t = {}
+         for _, v in ipairs(g.duplicates[url]) do
+            if v ~= index then
+               table.insert(t, v)
+            end
+         end
+         result = table.concat(t, ",")
+      end
+   end
+   return result
 end
 
 function item_message_cb()
@@ -1439,8 +1470,8 @@ function setup_bar()
          filling_tb = "horizontal",
          max_size = 2,
          items = w.string_eval_expression(
-            "[${s}_title],#${s}_index,[${s}_buffer_name],<${s}_nick>," ..
-            "${s}_message,${s}_status",
+            "[${s}_title],#${s}_index,(${s}_duplicate),[${s}_buffer_name]," ..
+            "<${s}_nick>,${s}_message,${s}_status",
             {}, { s = g.script.name }, {})
       },
       search = {

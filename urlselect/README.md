@@ -103,6 +103,9 @@ The list of bar items are:
 
 - **urlselect_search**: Search prompt.
 
+- **urlselect_duplicate**: If a URL appear several times, this will contain list
+  of duplicate indexes.
+
 
 ### HSignal
 
