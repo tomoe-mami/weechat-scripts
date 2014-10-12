@@ -103,11 +103,11 @@ function all_lines(buffer)
    end
    local h_line = w.hdata_get("line")
    local first_run = true
-   local line line = w.hdata_pointer(w.hdata_get("lines"), source, "first_line")
-   if not line or line == "" then
-      return
-   end
+   local line = w.hdata_pointer(w.hdata_get("lines"), source, "first_line")
    return function ()
+      if not line or line == "" then
+         return
+      end
       if first_run then
          first_run = false
       else
