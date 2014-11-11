@@ -59,9 +59,7 @@ inserting the URL into input bar. You can unbind these keys or set it into
 something else with the above commands.
 
 To see a list of available custom commands, you can press F1 while the URL
-selection bar is active. You can also use `/urlselect list-commands` anywhere
-else on Weechat.
-
+selection bar is active.
 
 
 ### Bar & Bar Items
@@ -115,6 +113,19 @@ hashtable sent with the signal has the following fields: `url`, `index`, `time`,
 and `buffer_short_name`.
 
 
+### Remembered URLs
+
+When you run a custom command on selected URL, it will be added to list of
+remembered URLs (similar to visited links in web browser). These remembered
+URLs will be marked with different color (underlined magenta) in the selection
+bar.
+
+You can exclude remembered URLs so it won't be listed on selection bar by
+setting `plugins.var.lua.skip_remember` to `1`.
+
+To see list of all remembered URLs, you can use command `/urlselect remember`
+and to clear it you can use `/urlselect forget`.
+
 
 ### Key Bindings
 
@@ -166,6 +177,11 @@ buffer only) or `merged` (scan all buffers merged with the current one).
 
 Timeout (in milliseconds) for displaying status notification (default: `1300`).
 
+##### plugins.var.lua.urlselect.use_simple_matching
+
+Use simple pattern matching when collecting URLs. Set to `1` to enable it or `0`
+to disable it (default: `0`).
+
 ##### plugins.var.lua.urlselect.time_format
 
 Format for displaying time (default: `%H:%M:%S`).
@@ -181,6 +197,15 @@ one (`normal`).
 
 Default search scope. Valid values are `nick`, `url`, `msg`, and `nick+msg`
 (default: `url`).
+
+##### plugins.var.lua.urlselect.max_remember
+
+Maximum number of URLs that can be stored in remember list (default: `100`).
+
+##### plugins.var.lua.urlselect.skip_remember
+
+Do not include remembered URLs on selection bar. Set to `1` to enable it or `0`
+to disable it (default: `0`).
 
 ##### plugins.var.lua.urlselect.search_prompt_color
 

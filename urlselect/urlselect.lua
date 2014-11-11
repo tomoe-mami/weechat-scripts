@@ -44,10 +44,29 @@ local g = {
          value = "0",
          description = "Use simple pattern matching when scanning for URLs"
       },
+      max_remember = {
+         type = "number",
+         value = "100",
+         description =
+            "Maximum number of \"used\" URLs that will be remembered. " ..
+            "A URL will be marked as \"used\" if you run an action on it. " ..
+            "Running `/urlselect forget` or unloading this script will clear " ..
+            "remembered URLs."
+      },
+      skip_remembered = {
+         type = "boolean",
+         value = "0",
+         description = "Skip remembered URLs when scanning"
+      },
       url_color = {
          type = "string",
          value = "_lightblue",
          description = "Color for URL"
+      },
+      remembered_url_color = {
+         type = "string",
+         value = "_magenta",
+         description = "Color for remembered URL"
       },
       nick_color = {
          type = "string",
@@ -142,13 +161,8 @@ local g = {
    last_index = 0,
    enable_search = false,
    search_scope = 1,
-   scope_list = {"url", "msg", "nick", "nick+msg"}
-}
-
-g.bar = {
-   main = { name = g.script.name },
-   search = { name = g.script.name .. "_search" },
-   help = { name = g.script.name .. "_help" }
+   scope_list = {"url", "msg", "nick", "nick+msg"},
+   remember = { list = {}, pos = {} },
 }
 
 g.keys = {
@@ -360,13 +374,14 @@ function setup_hooks()
       "[activate [current|merged]] " ..
       "|| bind [-label <label>] <key> <command> " ..
       "|| unbind <key> [<key> ...]" ..
-      "|| list-commands " ..
       "|| deactivate " ..
       "|| navigate <direction> " ..
       "|| run <key> " ..
       "|| search " ..
       "|| scope <new-scope> " ..
       "|| hsignal " ..
+      "|| remember [<url>] " ..
+      "|| forget [<url>] " ..
       "|| help",
 [[
       activate: Activate the URL selection bar (default action). The optional
@@ -375,7 +390,12 @@ function setup_hooks()
           bind: Bind a key to a Weechat command. You can use optional parameter
                 -label to specify the text that will be shown in help bar.
         unbind: Unbind key.
- list-commands: List all custom commands and their keys.
+      remember: Add a URL to remember list. If no URL specified, this will list
+                all remembered URLs.
+                When the selection bar is active and you run custom command on
+                a selected URL, it will be added to remember list automatically.
+        forget: Remove a URL from remember list. If no URL specified, this will
+                remove all remembered URLs.
          <key>: A single digit character (0-9) or one lowercase alphabet (a-z).
      <command>: Weechat command. You can specify multiple commands by using ; as
                 separator. To use literal semicolon, prepend it with a backslash.
@@ -426,8 +446,8 @@ The keys below are only available if search bar is active
        Ctrl-B: Search both in nicknames and messages
 
 ]],
-      "activate current|merged || bind -label || unbind || list-commands ||" ..
-      "deactivate || run || search || help ||" ..
+      "activate current|merged || bind -label || unbind || " ..
+      "remember || forget || deactivate || run || search || help ||" ..
       "navigate next|previous|first|last|previous-highlight|next-highlight ||" ..
       "scope next|previous|url|nick|msg|nick+msg",
       "command_cb",
@@ -449,13 +469,10 @@ function set_keys(buffer, key_type, flag)
    end
 end
 
-function set_bar(key, flag)
-   if g.bar[key].ptr and g.bar[key].ptr ~= "" then
-      if not flag then
-         w.bar_set(g.bar[key].ptr, "hidden", "on")
-      else
-         w.bar_set(g.bar[key].ptr, "hidden", "off")
-      end
+function hide_bar(name, flag)
+   local bar = w.bar_search(name)
+   if bar and bar ~= "" then
+      w.bar_set(bar, "hidden", flag and "off" or "on")
    end
 end
 
@@ -586,7 +603,7 @@ function cmd_action_activate(buffer, args)
             buffer)
 
          g.active = true
-         set_bar("main", true)
+         hide_bar(g.script.name, true)
          cmd_action_navigate(buffer, "previous")
          set_keys(buffer, "normal", true)
          w.bar_item_update(g.script.name .. "_title")
@@ -600,8 +617,8 @@ end
 function cmd_action_deactivate(buffer)
    if g.active then
       g.active, g.enable_help, g.last_index = false, false, 0
-      set_bar("main", false)
-      set_bar("help", false)
+      hide_bar(g.script.name, false)
+      hide_bar(g.script.name .. "_help", false)
       deactivate_search(buffer)
       set_keys(buffer, "normal", false)
       set_status()
@@ -749,7 +766,7 @@ function cmd_action_navigate(buffer, args, keyword)
    return w.WEECHAT_RC_OK
 end
 
-function set_all_input_bars(flag)
+function hide_all_input_bars(flag)
    if flag then
       if g._forced_bar and #g._forced_bar > 0 then
          for _, name in ipairs(g._forced_bar) do
@@ -766,9 +783,9 @@ function set_all_input_bars(flag)
             local hidden = w.infolist_integer(list, "hidden")
             local items = w.infolist_string(list, "items") or ""
             items = "," .. items:gsub("[^_%w]+", ",") .. ","
-            if name ~= g.bar.main.name and
-               name ~= g.bar.search.name and
-               name ~= g.bar.help.name and
+            if name ~= g.script.name and
+               name ~= g.script.name .. "_search" and
+               name ~= g.script.name .. "_help" and
                items:match(",input_text,") and
                hidden == 0 then
                w.bar_set(w.bar_search(name), "hidden", "on")
@@ -796,8 +813,8 @@ end
 
 function activate_search(buffer)
    g.enable_search = true
-   set_all_input_bars(false)
-   set_bar("search", true)
+   hide_all_input_bars(false)
+   hide_bar(g.script.name .. "_search", true)
    g._original_input_text = w.buffer_get_string(buffer, "input")
    g._original_input_pos = w.buffer_get_integer(buffer, "input_pos")
    w.buffer_set(buffer, "input", "")
@@ -809,8 +826,8 @@ end
 
 function deactivate_search(buffer)
    g.enable_search = false
-   set_bar("search", false)
-   set_all_input_bars(true)
+   hide_bar(g.script.name .. "_search", false)
+   hide_all_input_bars(true)
    set_keys(buffer, "search", false)
    if g.hooks.enter then
       w.unhook(g.hooks.enter)
@@ -937,7 +954,8 @@ function get_current_hashtable(raw_timestamp)
 end
 
 function eval_current_entry(text)
-   return w.string_eval_expression(text, {}, get_current_hashtable(), {})
+   local t = get_current_hashtable()
+   return w.string_eval_expression(text, {}, t, {}), t.url
 end
 
 function cmd_action_hsignal(buffer, args)
@@ -954,31 +972,17 @@ function cmd_action_run(buffer, args)
       local entry = g.custom_commands[args]
       if entry then
          set_status("Running cmd " .. (entry.label or args))
+         local u
          for cmd in split(entry.command, ";") do
-            cmd = eval_current_entry(cmd)
+            cmd, u = eval_current_entry(cmd)
             w.command(buffer, cmd)
+         end
+         if u and u ~= "" then
+            cmd_action_remember(buffer, u)
          end
       end
    end
    return w.WEECHAT_RC_OK
-end
-
-function cmd_action_list_commands(buffer, args)
-   print("KEYS    COMMANDS")
-   print("===============================================")
-   local fmt, opt = "Alt-%s    %s", { no_eval = true }
-   for k = 0, 9 do
-      local c = tostring(k)
-      if g.custom_commands[c] then
-         print(string.format(fmt, c, g.custom_commands[c].command), opt)
-      end
-   end
-   for k = string.byte('a'), string.byte('z') do
-      local c = string.char(k)
-      if g.custom_commands[c] then
-         print(string.format(fmt, c, g.custom_commands[c].command), opt)
-      end
-   end
 end
 
 function buffer_deactivated_cb(buffer)
@@ -988,8 +992,66 @@ end
 
 function cmd_action_help(buffer, args)
    g.enable_help = not g.enable_help
-   set_bar("help", g.enable_help)
+   hide_bar(g.script.name .. "_help", g.enable_help)
    w.bar_item_update(g.script.name .. "_help")
+   return w.WEECHAT_RC_OK
+end
+
+function cmd_action_list_remember()
+   if #g.remember.list < 1 then
+      print("No URL in remember list")
+   else
+      print("List of remembered URLs:")
+      for index, url in ipairs(g.remember.list) do
+         print(
+            "${color:${index_color}}${index}${color:default}: ${color:${url_color}}${url}",
+            {
+               index = index,
+               url = url,
+               index_color = g.config.index_color,
+               url_color = g.config.url_color
+            })
+      end
+   end
+   return w.WEECHAT_RC_OK
+end
+
+function cmd_action_remember(_, args)
+   if g.config.max_remember < 0 then
+      return w.WEECHAT_RC_OK
+   end
+   if not args or args == "" then
+      return cmd_action_list_remember()
+   end
+   if g.remember.pos[args] then
+      return w.WEECHAT_RC_OK
+   end
+   local last_pos = #g.remember.list
+   if last_pos >= g.config.max_remember then
+      local first = g.remember.list[1]
+      table.remove(g.remember.list, 1)
+      if first and g.remember.pos[first] then
+         g.remember.pos[first] = nil
+      end
+   else
+      last_pos = last_pos + 1
+   end
+   table.insert(g.remember.list, args)
+   g.remember.pos[args] = last_pos
+   return w.WEECHAT_RC_OK
+end
+
+function cmd_action_forget(_, args)
+   if not args or args == "" then
+      g.remember.pos = {}
+      g.remember.list = {}
+   else
+      local pos = g.remember.pos[args]
+      if pos and g.remember.list[pos] then
+         table.remove(g.remember.list, pos)
+         g.remember.pos[args] = nil
+      end
+   end
    return w.WEECHAT_RC_OK
 end
 
@@ -1006,7 +1068,8 @@ function command_cb(_, buffer, param)
       help              = cmd_action_help,
       search            = cmd_action_search,
       scope             = cmd_action_search_scope,
-      ["list-commands"] = cmd_action_list_commands
+      remember          = cmd_action_remember,
+      forget            = cmd_action_forget
    }
 
    if not action then
@@ -1049,6 +1112,7 @@ function remove_delimiter(x1, x2, url, msg)
 end
 
 function process_urls_in_message(msg, callback)
+   local remember = g.remember.pos
    local pattern
    if g.config.use_simple_matching then
       pattern = "([%w%+%.%-]+://[%w:!/#_~@&=,;%+%?%[%]%.%%%(%)%-]+)"
@@ -1064,24 +1128,27 @@ function process_urls_in_message(msg, callback)
          if not g.config.use_simple_matching then
             x1, x2, url = remove_delimiter(x1, x2, url, msg)
          end
-         count = count + 1
-         local msg2
-         if g.config.url_color then
-            local left, right = "", ""
-            if x1 > 1 then
-               left = msg:sub(1, x1 - 1)
+         if not g.config.skip_remembered or not remember[url] then
+            count = count + 1
+            local msg2
+            if g.config.url_color or g.config.remembered_url_color then
+               local color
+               if remember[url] then
+                  color = w.color(g.config.remembered_url_color)
+               else
+                  color = w.color(g.config.url_color)
+               end
+               local left, right = "", ""
+               if x1 > 1 then
+                  left = msg:sub(1, x1 - 1)
+               end
+               if x2 < #msg then
+                  right = msg:sub(x2 + 1)
+               end
+               msg2 = left ..  color ..  url ..  w.color("reset") ..  right
             end
-            if x2 < #msg then
-               right = msg:sub(x2 + 1)
-            end
-            msg2 =
-               left ..
-               w.color(g.config.url_color) ..
-               url ..
-               w.color("reset") ..
-               right
+            callback(url, msg2)
          end
-         callback(url, msg2)
       end
    end
    return count
@@ -1438,12 +1505,26 @@ function update_list_items()
    end
 end
 
+function resize_remember_table(new_limit)
+   local remember = g.remember
+   local total_items = #remember.list
+   if new_limit < total_items then
+      for i = 1, total_items - new_limit do
+         remember.pos[ remember.list[1] ] = nil
+         table.remove(remember.list, 1)
+      end
+   end
+end
+
 function config_cb(_, opt_name, opt_value)
    local prefix = "plugins.var.lua." .. g.script.name .. "."
    local name = opt_name:sub(#prefix + 1)
 
    if g.defaults[name] then
       g.config[name] = get_or_set_option(name, g.defaults[name], opt_value)
+      if name == "max_remember" then
+         resize_remember_table(g.config[name])
+      end
    elseif name:sub(1, 4) == "cmd." then
       set_custom_command(name:sub(5), opt_value)
    elseif name:sub(1, 6) == "label." then
@@ -1461,7 +1542,7 @@ function setup_bar()
    end
 
    local settings = {
-      main = {
+      [g.script.name] = {
          priority = 3000,
          filling_tb = "horizontal",
          max_size = 2,
@@ -1470,13 +1551,13 @@ function setup_bar()
             "<${s}_nick>,${s}_message,${s}_status",
             {}, { s = g.script.name }, {})
       },
-      search = {
+      [g.script.name .. "_search"] = {
          priority = 2999,
          filling_tb = "horizontal",
          max_size = 1,
          items = g.script.name .. "_search,input_text"
       },
-      help = {
+      [g.script.name .. "_help"] = {
          priority = 2998,
          filling_tb = "columns_horizontal",
          max_size = 6,
@@ -1484,27 +1565,26 @@ function setup_bar()
       }
    }
 
-   for key, info in pairs(g.bar) do
-      local bar = w.bar_search(info.name)
+   for name, info in pairs(settings) do
+      local bar = w.bar_search(name)
       if not bar or bar == "" then
-         bar = w.bar_new(
-            info.name,                 -- name
+         w.bar_new(
+            name,                      -- name
             "on",                      -- hidden?
-            settings[key].priority,    -- priority
+            info.priority,             -- priority
             "root",                    -- type
             "active",                  -- condition
             "top",                     -- position
-            settings[key].filling_tb,  -- filling top/bottom
+            info.filling_tb,           -- filling top/bottom
             "vertical",                -- filling left/right
             0,                         -- size
-            settings[key].max_size,    -- max size
+            info.max_size,             -- max size
             "default",                 -- text fg
             "cyan",                    -- delim fg
             "default",                 -- bar bg
             "on",                      -- separator
-            settings[key].items)       -- items
+            info.items)                -- items
       end
-      g.bar[key].ptr = bar
    end
 end
 
