@@ -376,7 +376,7 @@ function setup_hooks()
       "|| unbind <key> [<key> ...]" ..
       "|| deactivate " ..
       "|| navigate <direction> " ..
-      "|| run <key> " ..
+      "|| run <key>|<command> " ..
       "|| search " ..
       "|| scope <new-scope> " ..
       "|| hsignal " ..
@@ -396,6 +396,10 @@ function setup_hooks()
                 a selected URL, it will be added to remember list automatically.
         forget: Remove a URL from remember list. If no URL specified, this will
                 remove all remembered URLs.
+           run: Run a command. When selection bar is active, this action will
+                execute custom command on the selected URL. When selection bar
+                is not active, it will execute custom command on the last URL
+                in a buffer/merged buffers.
          <key>: A single digit character (0-9) or one lowercase alphabet (a-z).
      <command>: Weechat command. You can specify multiple commands by using ; as
                 separator. To use literal semicolon, prepend it with a backslash.
@@ -410,7 +414,6 @@ manually:
 
     deactivate: Deactivate URL selection bar.
       navigate: Navigate within the list of URLs.
-           run: Run the command bound to a key.
         search: Toggle search bar.
          scope: Change search scope.
        hsignal: Send a "urlselect_current" hsignal with data from currently
@@ -565,6 +568,23 @@ function new_line_cb(buffer, evbuf, date, tags,
    return w.WEECHAT_RC_OK
 end
 
+function start_single_mode(buffer)
+   g.scan_mode = g.config.scan_merged_buffers and "merged" or "current"
+   g.list = collect_urls(buffer, g.scan_mode, true)
+   if g.list and g.list ~= "" then
+      g.active = true
+      return true
+   else
+      return false
+   end
+   return w.WEECHAT_RC_OK
+end
+
+function stop_single_mode()
+   w.infolist_free(g.list)
+   g.last_index, g.active, g.list, g.scan_mode = 0, nil, nil, nil
+end
+
 function cmd_action_activate(buffer, args)
    if not g.active then
       g.scan_mode = nil
@@ -580,7 +600,6 @@ function cmd_action_activate(buffer, args)
 
       g.list, g.duplicates = collect_urls(buffer, g.scan_mode)
       if g.list and g.list ~= "" then
-
          g.hooks.switch = w.hook_signal(
             "buffer_switch",
             "buffer_deactivated_cb",
@@ -968,19 +987,38 @@ function cmd_action_hsignal(buffer, args)
 end
 
 function cmd_action_run(buffer, args)
-   if g.list and g.list ~= "" then
-      local entry = g.custom_commands[args]
-      if entry then
-         set_status("Running cmd " .. (entry.label or args))
-         local u
-         for cmd in split(entry.command, ";") do
-            cmd, u = eval_current_entry(cmd)
-            w.command(buffer, cmd)
-         end
-         if u and u ~= "" then
-            cmd_action_remember(buffer, u)
-         end
+   local single = false
+   if not g.list or g.list == "" then
+      single = true
+      if not start_single_mode(buffer) then
+         return w.WEECHAT_RC_OK
       end
+      cmd_action_navigate(buffer, "next")
+   end
+
+   local entry = g.custom_commands[args]
+   if not entry and w.string_is_command_char(args) == 1 then
+      entry = {
+         command = args,
+         label = args:match("^([^%s]+)")
+      }
+   end
+
+   if entry then
+      if not single then
+         set_status("Running cmd " .. (entry.label or args))
+      end
+      local u
+      for cmd in split(entry.command, ";") do
+         cmd, u = eval_current_entry(cmd)
+         w.command(buffer, cmd)
+      end
+      if u and u ~= "" then
+         cmd_action_remember(buffer, u)
+      end
+   end
+   if single then
+      stop_single_mode()
    end
    return w.WEECHAT_RC_OK
 end
@@ -1004,12 +1042,12 @@ function cmd_action_list_remember()
       print("List of remembered URLs:")
       for index, url in ipairs(g.remember.list) do
          print(
-            "${color:${index_color}}${index}${color:default}: ${color:${url_color}}${url}",
+            "${color:${ic}}${index}${color:default}: ${color:${uc}}${url}",
             {
                index = index,
                url = url,
-               index_color = g.config.index_color,
-               url_color = g.config.url_color
+               ic = g.config.index_color,
+               uc = g.config.url_color
             })
       end
    end
@@ -1184,8 +1222,58 @@ function convert_datetime_into_timestamp(time_string)
    })
 end
 
+function get_info_from_current_line(h_buf, h_line_data, data)
+   local info, tags = {}
+   info.prefix = w.hdata_string(h_line_data, data, "prefix")
 
-function collect_urls(buffer, mode)
+   local tag_required = (g.config.tags and #g.config.tags > 0)
+   local tag_count =
+      w.hdata_get_var_array_size(h_line_data, data, "tags_array")
+
+   if tag_required then
+      if not tag_count or tag_count < 1 then
+         return
+      end
+      tags = "," .. string.lower(table.concat(g.config.tags, ",")) .. ","
+   end
+
+   if tag_count > 0 then
+      local found_match = false
+      for i = 0, tag_count - 1 do
+         local tag = w.hdata_string(h_line_data, data, i .. "|tags_array")
+         if tag:sub(1, 5) == "nick_" then
+            info.nick = tag:sub(6)
+         elseif tag == "logger_backlog" then
+            info.prefix = "backlog: " .. info.prefix
+         end
+         if tag_required and not found_match then
+            local p = tags:find("," .. tag:lower() .. ",", 1, true)
+            if p then
+               found_match = true
+            end
+         end
+      end
+      if tag_required and not found_match then
+         return
+      end
+   end
+
+   local buffer = w.hdata_pointer(h_line_data, data, "buffer")
+   info.buffer_full_name = w.hdata_string(h_buf, buffer, "full_name")
+   info.buffer_name = w.hdata_string(h_buf, buffer, "name")
+   info.buffer_short_name = w.hdata_string(h_buf, buffer, "short_name")
+   info.buffer_number = w.hdata_integer(h_buf, buffer, "number")
+
+   info.prefix = w.string_remove_color(info.prefix, "")
+   info.highlighted = w.hdata_char(h_line_data, data, "highlighted")
+   info.message = w.hdata_string(h_line_data, data, "message")
+   info.time = tonumber(w.hdata_time(h_line_data, data, "date") or 0)
+
+   return info
+end
+
+
+function collect_urls(buffer, mode, single)
    local source_name = "own_lines"
    if mode == "merged" then
       source_name = "lines"
@@ -1196,73 +1284,29 @@ function collect_urls(buffer, mode)
       return
    end
 
-   local index, info, duplicates = 0, {}, {}
+   local index, info, duplicates = 0, {}
+   if not single then
+      duplicates = {}
+   end
+
    local list = w.infolist_new()
-   local line = w.hdata_pointer(w.hdata_get("lines"), source, "first_line")
+   local line_type = single and "last_line" or "first_line"
+   local line = w.hdata_pointer(w.hdata_get("lines"), source, line_type)
    local h_line = w.hdata_get("line")
    local h_line_data = w.hdata_get("line_data")
 
    local add_cb = function (url, msg)
-      if not duplicates[url] then
-         duplicates[url] = {}
-      end
       index = index + 1
-      table.insert(duplicates[url], index)
+      if not single then
+         if not duplicates[url] then
+            duplicates[url] = {}
+         end
+         table.insert(duplicates[url], index)
+      end
       info.index = index
       info.url = url
       info.message = msg
       create_new_url_entry(list, info)
-   end
-
-   local get_info_from_current_line = function (data)
-      local info, tags = {}
-
-      info.prefix = w.hdata_string(h_line_data, data, "prefix")
-
-      local tag_required = (g.config.tags and #g.config.tags > 0)
-      local tag_count =
-         w.hdata_get_var_array_size(h_line_data, data, "tags_array")
-
-      if tag_required then
-         if not tag_count or tag_count < 1 then
-            return
-         end
-         tags = "," .. string.lower(table.concat(g.config.tags, ",")) .. ","
-      end
-
-      if tag_count > 0 then
-         local found_match = false
-         for i = 0, tag_count - 1 do
-            local tag = w.hdata_string(h_line_data, data, i .. "|tags_array")
-            if tag:sub(1, 5) == "nick_" then
-               info.nick = tag:sub(6)
-            elseif tag == "logger_backlog" then
-               info.prefix = "backlog: " .. info.prefix
-            end
-            if tag_required and not found_match then
-               local p = tags:find("," .. tag:lower() .. ",", 1, true)
-               if p then
-                  found_match = true
-               end
-            end
-         end
-         if tag_required and not found_match then
-            return
-         end
-      end
-
-      local buffer = w.hdata_pointer(h_line_data, data, "buffer")
-      info.buffer_full_name = w.hdata_string(h_buf, buffer, "full_name")
-      info.buffer_name = w.hdata_string(h_buf, buffer, "name")
-      info.buffer_short_name = w.hdata_string(h_buf, buffer, "short_name")
-      info.buffer_number = w.hdata_integer(h_buf, buffer, "number")
-
-      info.prefix = w.string_remove_color(info.prefix, "")
-      info.highlighted = w.hdata_char(h_line_data, data, "highlighted")
-      info.message = w.hdata_string(h_line_data, data, "message")
-      info.time = tonumber(w.hdata_time(h_line_data, data, "date") or 0)
-
-      return info
    end
 
    while line and line ~= "" do
@@ -1270,13 +1314,16 @@ function collect_urls(buffer, mode)
       if data and data ~= "" then
          local displayed = w.hdata_char(h_line_data, data, "displayed")
          if displayed == 1 then
-            info = get_info_from_current_line(data)
+            info = get_info_from_current_line(h_buf, h_line_data, data)
             if info then
                process_urls_in_message(info.message, add_cb)
+               if single and index > 0 then
+                  break
+               end
             end
          end
       end
-      line = w.hdata_move(h_line, line, 1)
+      line = w.hdata_move(h_line, line, single and -1 or 1)
    end
    if index == 0 then
       w.infolist_free(list)
@@ -1481,6 +1528,9 @@ function set_status(message)
 end
 
 function item_status_cb()
+   if g.hooks.timer then
+      w.unhook(g.hooks.timer)
+   end
    if not g.current_status or g.current_status == "" then
       return ""
    else
@@ -1489,11 +1539,7 @@ function item_status_cb()
          s = w.color(g.config.status_color) .. s
       end
       if g.config.status_timeout and g.config.status_timeout > 0 then
-         if g.hooks.timer then
-            w.unhook(g.hooks.timer)
-         end
-         g.hooks.timer =
-            w.hook_timer(g.config.status_timeout, 0, 1, "set_status", "")
+         g.hooks.timer = w.hook_timer(g.config.status_timeout, 0, 1, "set_status", "")
       end
       return s
    end

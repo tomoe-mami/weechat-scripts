@@ -54,13 +54,22 @@ To remove a custom command, simply unbind its key:
 
     /urlselect unbind <key>
 
-Two custom commands are already set by default. `o` for xdg-open and `i` for
+Two custom commands are already set by default. `o` for (xdg-)open and `i` for
 inserting the URL into input bar. You can unbind these keys or set it into
 something else with the above commands.
 
 To see a list of available custom commands, you can press F1 while the URL
 selection bar is active.
 
+You can execute custom command without activating selection bar. Just call
+`/urlselect run` followed by either a `<key>` character that has been bound
+using `/urlselect bind` or a normal WeeChat command. For example:
+
+    /urlselect run o
+    /urlselect run /print -core ${nick} wants you to visit ${url}
+
+The URL that will be used when selection bar is not active is the last URL in a
+buffer/merged buffers.
 
 ### Bar & Bar Items
 
