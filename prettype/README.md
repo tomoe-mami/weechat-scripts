@@ -1,8 +1,6 @@
 prettype
 ========
 
-*This script requires* ***slnunicode*** *and* ***lrexlib-pcre*** *modules*
-
 A Weechat script for prettifying text as you type it in input bar by performing
 auto-capitalization and replacing standard symbols with their unicode
 equivalents. For example, if you type this:
@@ -12,6 +10,16 @@ equivalents. For example, if you type this:
 it will be converted to this:
 
     “Uh… I think I’ve seen Dr. Manhattan’s blue dong in it.” — Internet User
+
+### Dependencies
+
+This script requires **utf8** and **lrexlib-pcre** modules. You can get them
+using [luarocks](https://luarocks.org/):
+
+```
+luarocks install utf8
+luarocks install lrexlib-pcre
+```
 
 ### Escaping Text
 
@@ -35,6 +43,17 @@ following command:
 
 There's also `/prettype print-original` to print the original text to current
 buffer (not sending it).
+
+### Modifier `prettype_before` and `prettype_after`
+
+You can use modifier `prettype_before` to alter the text in input bar before it
+is modified by prettype script and `prettype_after` to alter the text after
+prettype modified it. For example using trigger:
+
+```
+/trigger add kaomoji modifier prettype_before
+/trigger set kaomoji regex /:kiss:/( ˘ ³˘)❤/tg_string /:confused:/(´･_･`)/tg_string
+```
 
 ### Option
 
