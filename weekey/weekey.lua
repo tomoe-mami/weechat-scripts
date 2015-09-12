@@ -1,17 +1,19 @@
 -- A dumb script for displaying key combo in a bar
 --
--- It creates 2 bar items:
+-- It creates 3 bar items:
 --
--- 1. keymon_combo: the key combo
--- 2. keymon_command: the command for that key combo 
+-- 1. weekey_combo: the key combo
+-- 2. weekey_command: the command for that key combo 
+-- 3. weekey_context: context for the key combo
 --
 -- Requires Weechat 1.0 or newer
 
-w, script_name = weechat, "keymon"
+w, script_name = weechat, "weekey"
 
 g = {
    recent_combo = "",
    recent_command = "",
+   recent_context = "",
    hook = {},
    modifier = {
       shift = "Shift",
@@ -24,23 +26,26 @@ g = {
    binding = {},
    default = {
       local_bindings = { "off", "Monitor per buffer key bindings set via local variable key_bind_*" },
-      prefix = { "[", "Text before key/command" },
-      suffix = { "]", "Text after key/command" },
-      separator = { "-", "Separator between modifier(s)" },
-      interval = { 800, "Interval for showing key/command (in milliseconds)" },
+      mod_separator = { "-", "Separator between modifier(s)" },
+      key_separator = { " ", "Separator between keys" },
+      duration = { 800, "Duration for showing key/command (in milliseconds)" },
+      color_context = { "", "Color of context. Set to empty string to use the color of command/local command" },
       color_command = { "default", "Color of command" },
-      color_local_command = { "cyan", "Color for local command (only used if local_bindings is enabled)" },
+      color_local_command = { "cyan", "Color for local command" },
       color_key = { "yellow", "Color of key" },
-      color_delim = { "bar_delim", "Color of delimiter (prefix/suffix/separator)" }
-   }
+      color_delim = { "bar_delim", "Color of delimiter" }
+   },
+   item = { "combo", "command", "context" }
 }
 
 function main()
    if w.register(script_name, "singalaut", "0.1", "WTFPL", "Key monitoring", "", "") then
       init_config()
       collect_bindings()
-      w.bar_item_new(script_name.."_combo", "item_combo_cb", "")
-      w.bar_item_new(script_name.."_command", "item_command_cb", "")
+
+      for _, item in ipairs(g.item) do
+         w.bar_item_new(script_name.."_"..item, "item_"..item.."_cb", "")
+      end
       for _, ctx in ipairs(g.context) do
          w.hook_signal("9000|key_combo_"..ctx, "key_combo_cb", ctx)
       end
@@ -53,7 +58,7 @@ end
 function collect_bindings()
    local binds = g.binding
    for _, ctx in ipairs(g.context) do
-      local list = w.infolist_get("key", "", "")
+      local list = w.infolist_get("key", "", ctx)
       if list and list ~= "" then
          binds[ctx] = {}
          while w.infolist_next(list) == 1 do
@@ -78,16 +83,16 @@ function init_config()
       end
    end
    g.config = conf
-   validate_interval()
+   validate_duration()
    check_local_bindings()
 end
 
-function validate_interval()
-   local interval = tonumber(string.format("%d", g.config.interval or -1))
-   if interval < 0 then
-      interval = g.default.interval[1]
+function validate_duration()
+   local duration = tonumber(g.config.duration) or -1
+   if duration < 0 then
+      duration = g.default.duration[1]
    end
-   g.config.interval = interval
+   g.config.duration = duration
 end
 
 function check_local_bindings()
@@ -138,93 +143,125 @@ function item_command_cb()
    return g.recent_command
 end
 
+function item_context_cb()
+   return g.recent_context
+end
+
+function update_items()
+   for _, item in ipairs(g.item) do
+      w.bar_item_update(script_name.."_"..item)
+   end
+end
+
 function key_combo_cb(ctx, _, signal_data)
    local buf_ptr = w.current_buffer()
    if g.hook.item_timer then
       w.unhook(g.hook.item_timer)
       g.hook.item_timer = nil
    end
-   update_recent_combo(signal_data)
-   update_recent_command(ctx, signal_data, buf_ptr)
-   if g.config.interval > 0 then
-      g.hook.item_timer = w.hook_timer(g.config.interval, 0, 1, "item_timer_cb", "")
+   local found_bind, found_bind_ctx = get_binding(ctx, signal_data, buf_ptr)
+   update_recent_combo(signal_data, found_bind)
+   update_recent_command(found_bind, found_bind_ctx)
+   if g.config.duration > 0 then
+      g.hook.item_timer = w.hook_timer(g.config.duration, 0, 1, "item_timer_cb", "")
    end
-   w.bar_item_update(script_name.."_combo")
-   w.bar_item_update(script_name.."_command")
+   update_items()
    return w.WEECHAT_RC_OK
 end
 
-function update_recent_command(ctx, signal_data, buf_ptr)
-   local binds, conf, cmd = g.binding, g.config, ""
-   local color_delim = w.color(conf.color_delim)
-   local color_cmd = w.color(conf.color_command)
-   local color_local_cmd = w.color(conf.color_local_command)
-
-   if conf.local_bindings and
-      binds.buffer and
-      binds.buffer[buf_ptr] and
-      binds.buffer[buf_ptr][signal_data] then
-      cmd = color_delim..conf.prefix..
-            color_local_cmd..binds.buffer[buf_ptr][signal_data]..
-            color_delim..conf.suffix
-   elseif binds[ctx] and binds[ctx][signal_data] then
-      cmd = color_delim..conf.prefix..
-            color_cmd..binds[ctx][signal_data]..
-            color_delim..conf.suffix
+function get_binding(context, key, buf_ptr)
+   local cmd, ctx
+   if g.config.local_bindings and
+      buf_ptr and
+      buf_ptr ~= "" and
+      g.binding.buffer[buf_ptr] and
+      g.binding.buffer[buf_ptr][key] then
+      cmd, ctx = g.binding.buffer[buf_ptr][key], "local"
+   elseif g.binding[context] and g.binding[context][key] then
+      cmd, ctx = g.binding[context][key], context
    end
-   g.recent_command = cmd
+   if cmd == "" then
+      cmd, ctx = nil, nil
+   end
+   return cmd, ctx
 end
 
-function update_recent_combo(signal_data)
-   local conf, mod, keys = g.config, g.modifier, g.keys
-   if signal_data:sub(1, 1) ~= "\001" then
-      g.recent_combo = ""
-   else
-      local combo, i, partial = {}, 1, false
-      local color_key = w.color(conf.color_key)
-      local color_delim = w.color(conf.color_delim)
-
-      for ch in signal_data:gmatch("(\001[^\001]*)") do
-         local seq = {}
-         if partial then
-            i = i - 1
-            table.insert(seq, combo[i])
-         end
-         if keys[ch] then
-            if type(keys[ch]) == "table" then
-               for _, k in ipairs(keys[ch]) do
-                  table.insert(seq, k)
-               end
-            else
-               table.insert(seq, keys[ch])
-            end
-            partial = false
-         else
-            local brackets, str = ch:match("^\001(%[*)(.*)$")
-            if brackets == "[" then
-               table.insert(seq, mod.meta)
-            elseif brackets == "[[" then
-               table.insert(seq, mod.meta2)
-            elseif brackets == "" then
-               table.insert(seq, mod.ctrl)
-            end
-            if str ~= "" then
-               table.insert(seq, str)
-               partial = false
-            else
-               partial = true
-            end
-         end
-         combo[i] = color_key..table.concat(seq, color_delim..conf.separator..color_key)
-         i = i + 1
+function update_recent_command(cmd, ctx)
+   if cmd and cmd ~= "" then
+      local conf, color_cmd, color_ctx = g.config
+      if ctx == "local" then
+         color_cmd = w.color(conf.color_local_command)
+      else
+         color_cmd = w.color(conf.color_command)
       end
-      if #combo == 0 then
+      if conf.color_context == "" then
+         color_ctx = color_cmd
+      else
+         color_ctx = w.color(conf.color_context)
+      end
+      g.recent_command = color_cmd..cmd
+      g.recent_context = color_ctx..ctx
+   else
+      g.recent_command = ""
+      g.recent_context = ""
+   end
+end
+
+function update_recent_combo(signal_data, found_bind)
+   local conf = g.config
+   local color_key = w.color(conf.color_key)
+
+   if signal_data:sub(1, 1) ~= "\001" then
+      if not found_bind then
          g.recent_combo = ""
       else
-         g.recent_combo = color_delim..conf.prefix..
-                        table.concat(combo, color_delim..conf.suffix..conf.prefix)..
-                        color_delim..conf.suffix
+         g.recent_combo = color_key..signal_data
       end
+      return
+   end
+
+   local mod, keys = g.modifier, g.keys
+   local combo, i, partial = {}, 1, false
+   local color_delim = w.color(conf.color_delim)
+
+   for ch in signal_data:gmatch("(\001[^\001]*)") do
+      local seq = {}
+      if partial then
+         i = i - 1
+         table.insert(seq, combo[i])
+      end
+      if keys[ch] then
+         if type(keys[ch]) == "table" then
+            for _, k in ipairs(keys[ch]) do
+               table.insert(seq, k)
+            end
+         else
+            table.insert(seq, keys[ch])
+         end
+         partial = false
+      else
+         local brackets, str = ch:match("^\001(%[?%[?)(.*)$")
+         if brackets == "[" then
+            table.insert(seq, mod.meta)
+         elseif brackets == "[[" then
+            table.insert(seq, mod.meta2)
+         elseif brackets == "" then
+            table.insert(seq, mod.ctrl)
+         end
+         if str ~= "" then
+            table.insert(seq, str)
+            partial = false
+         else
+            partial = true
+         end
+      end
+      combo[i] = color_key..table.concat(seq, color_delim..conf.mod_separator..color_key)
+      i = i + 1
+   end
+   if #combo == 0 then
+      g.recent_combo = ""
+   else
+      g.recent_combo = table.concat(combo, color_delim..conf.key_separator)
    end
 end
 
@@ -232,8 +269,8 @@ function item_timer_cb()
    g.hook.item_timer = nil
    g.recent_combo = ""
    g.recent_command = ""
-   w.bar_item_update(script_name.."_combo")
-   w.bar_item_update(script_name.."_command")
+   g.recent_context = ""
+   update_items()
    return w.WEECHAT_RC_OK
 end
 
@@ -259,8 +296,8 @@ function config_cb(_, full_name, value)
    local name = full_name:sub(#prefix + 1)
    if name and name ~= "" and g.default[name] then
       g.config[name] = value
-      if name == "interval" then
-         validate_interval()
+      if name == "duration" then
+         validate_duration()
       elseif name == "local_bindings" then
          check_local_bindings()
       end
