@@ -103,14 +103,14 @@ function check_weechat_version()
       return
    end
 
-   if wee_ver < 0x10000000 then
+   if wee_ver < 0x01000000 then
       -- weechat < 1.0: * in the middle of string isn't treated as wildcard
       wc_match = wc_match_old
    else
       wc_match = wc_match_new
    end
 
-   if wee_ver < 0x1030000 then
+   if wee_ver < 0x01030000 then
       -- weechat < 1.3: weechat.hook_completion_get_string is documented but
       -- does not exist inside script
       completion_context = completion_context_old
