@@ -164,8 +164,8 @@ function config_init()
          },
          position = {
             "integer", "Position of label",
-            "prefix_start|prefix_end|message_start|message_end", 0, 3,
-            "message_end", "message_end", 0,
+            "before_prefix|after_prefix|before_message|after_message|replace_prefix|replace_message", 0, 5,
+            "after_message", "after_message", 0,
             "", "", "", "", "", ""
          },
          prefix = {
@@ -363,16 +363,22 @@ function modify_message_cb(param)
    if not empty(ptr) then
       local pos = w.config_string(g.config.option.look.position)
       local t, h_line_data = {}, w.hdata_get("line_data")
-      local message = w.hdata_string(h_line_data, ptr, "message")
-      local prefix = w.hdata_string(h_line_data, ptr, "prefix")
-      if pos == "prefix_end" then
-         t.prefix = prefix.." "..labels
-      elseif pos == "prefix_start" then
-         t.prefix = labels.." "..prefix
-      elseif pos == "message_start" then
-         t.message = labels.." "..message
+      if pos == "replace_prefix" then
+         t.prefix = labels
+      elseif pos == "replace_message" then
+         t.message = labels
       else
-         t.message = message.." "..labels
+         local message = w.hdata_string(h_line_data, ptr, "message")
+         local prefix = w.hdata_string(h_line_data, ptr, "prefix")
+         if pos == "after_prefix" then
+            t.prefix = prefix.." "..labels
+         elseif pos == "before_prefix" then
+            t.prefix = labels.." "..prefix
+         elseif pos == "before_message" then
+            t.message = labels.." "..message
+         else
+            t.message = message.." "..labels
+         end
       end
       w.hdata_update(h_line_data, ptr, t)
    end
