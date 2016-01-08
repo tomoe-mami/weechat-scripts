@@ -1,5 +1,5 @@
 local w = weechat
-local unicode = require "unicode"
+local utf8 = require "utf8"
 
 local g = {
    script = {
@@ -32,10 +32,6 @@ local g = {
 }
 
 g.bar_name = g.script.name .. "_mnemonics"
-g.keys = {
-   ["meta2-A"] = "/bar scroll " .. g.bar_name .. " * y-1",
-   ["meta2-B"] = "/bar scroll " .. g.bar_name .. " * y+1"
-}
 
 function string_to_bool(v)
    return (v and v == "1")
@@ -125,13 +121,13 @@ function remove_hooks()
 end
 
 function get_outer_string(p)
-   local left = unicode.utf8.sub(p.text, 1, p.init_pos - 1) or ""
-   local right = unicode.utf8.sub(p.text, p.init_pos + p.length) or ""
+   local left = utf8.sub(p.text, 1, p.init_pos - 1) or ""
+   local right = utf8.sub(p.text, p.init_pos + p.length) or ""
    return left, right
 end
 
 function get_captured_string(p)
-   return unicode.utf8.sub(p.text, p.init_pos, p.init_pos + p.length - 1)
+   return utf8.sub(p.text, p.init_pos, p.init_pos + p.length - 1)
 end
 
 function capture_ok_cb(_, buffer)
@@ -141,7 +137,7 @@ function capture_ok_cb(_, buffer)
       local replacement = p.callback(p.substring)
       if replacement then
          local left, right = get_outer_string(p)
-         local new_pos = p.init_pos + unicode.utf8.len(replacement) - 1
+         local new_pos = p.init_pos + utf8.len(replacement) - 1
          w.buffer_set(buffer, "input", left .. replacement .. right)
          w.buffer_set(buffer, "input_pos", new_pos)
       end
@@ -193,7 +189,7 @@ function capture_input_cb(_, _, buffer)
    local p = g.capture_param
    p.text = w.buffer_get_string(buffer, "input")
 
-   if unicode.utf8.len(p.text) >= p.init_pos and p.length < p.max_length then
+   if utf8.len(p.text) >= p.init_pos and p.length < p.max_length then
       p.length = p.length + 1
       p.substring = get_captured_string(p)
       if p.length >= p.max_length then
@@ -222,7 +218,7 @@ end
 
 function input_mnemonic_callback(s)
    if g.mnemonics[s] then
-      return unicode.utf8.char(g.mnemonics[s])
+      return utf8.char(g.mnemonics[s])
    end
 end
 
@@ -247,7 +243,7 @@ function cmd_input_mnemonic(buffer, args)
 end
 
 function input_codepoint_callback(s)
-   return unicode.utf8.char(tonumber(s, 16))
+   return utf8.char(tonumber(s, 16))
 end
 
 function cmd_input_codepoint(buffer, args)
@@ -343,7 +339,12 @@ function show_bar(flag, buffer)
       w.bar_set(g.bar, "hidden", flag and "off" or "on")
       if buffer then
          local prefix = flag and "key_bind_" or "key_unbind_"
-         for key, command in pairs(g.keys) do
+         local keys = {
+            ["meta2-A"] = "/bar scroll " .. g.bar_name .. " * y-1",
+            ["meta2-B"] = "/bar scroll " .. g.bar_name .. " * y+1"
+         }
+
+         for key, command in pairs(keys) do
             w.buffer_set(buffer, prefix .. key, flag and command or "")
          end
       end
