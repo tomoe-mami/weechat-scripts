@@ -54,13 +54,9 @@ function main()
    end
 end
 
-function empty(v)
-   return not v or v == ""
-end
-
 function iter_buffers(name)
    local list = w.infolist_get("buffer", "", name or "")
-   if not empty(list) then
+   if list ~= "" then
       return function ()
          if w.infolist_next(list) ~= 1 then
             w.infolist_free(list)
@@ -74,7 +70,7 @@ end
 
 function iter_nicklist(buffer)
    local list = w.infolist_get("nicklist", buffer, "")
-   if not empty(list) then
+   if list ~= "" then
       return function ()
          local t
          while t ~= "nick" do
@@ -157,7 +153,7 @@ function check_buffer_conditions(buffer, ignore_pause_flag)
    if not ignore_pause_flag and pause_flag(buffer) then
       return false
    end
-   if not empty(g.config.conditions) then
+   if g.config.conditions ~= "" then
       local result = w.string_eval_expression(
          g.config.conditions,
          { buffer = buffer },
@@ -206,7 +202,7 @@ function show_nick(buffer, nick_name, timestamp)
       g.buffers[buf_name] = {}
    end
    local ptr = w.nicklist_search_nick(buffer, "", nick_name)
-   if not empty(ptr) then
+   if ptr ~= "" then
       g.buffers[buf_name][nick_name] = timestamp
       if w.nicklist_nick_get_integer(buffer, ptr, "visible") == 0 then
          w.nicklist_nick_set(buffer, ptr, "visible", "1")
@@ -219,7 +215,7 @@ function print_cb(_, buffer, time, tags, displayed)
       return w.WEECHAT_RC_OK
    end
    local nick = string.match(","..tags..",", ",nick_([^,]-),")
-   if empty(nick) then
+   if nick == "" then
       return w.WEECHAT_RC_OK
    end
    if check_buffer_conditions(buffer) then
@@ -232,9 +228,7 @@ function nick_added_cb(_, _, param)
    local buffer, nick_name = param:match("^([^,]-),(.+)$")
    if check_buffer_conditions(buffer) then
       local ptr = w.nicklist_search_nick(buffer, "", nick_name)
-      if not empty(ptr) then
-         w.nicklist_nick_set(buffer, ptr, "visible", "0")
-      end
+      w.nicklist_nick_set(buffer, ptr, "visible", "0")
    end
    return w.WEECHAT_RC_OK
 end
@@ -249,9 +243,7 @@ function nick_removing_cb(_, _, param)
       -- weechat doesn't decrease nicklist_visible_count when an invisible nick
       -- is removed. so we have to make sure it's visible first
       local ptr = w.nicklist_search_nick(buffer, "", nick_name)
-      if not empty(ptr) then
-         w.nicklist_nick_set(buffer, ptr, "visible", "1")
-      end
+      w.nicklist_nick_set(buffer, ptr, "visible", "1")
    end
    return w.WEECHAT_RC_OK
 end
@@ -272,7 +264,7 @@ function names_received_cb(_, modifier, server, msg)
       local channel = info.text:match("^%S+ (%S+)")
       if channel then
          local buf_ptr = w.info_get("irc_buffer", server..","..channel)
-         if not empty(buf_ptr) and check_buffer_conditions(buf_ptr) then
+         if check_buffer_conditions(buf_ptr) then
             pause_flag(buf_ptr, true)
             for nick_name, nick_ptr in iter_nicklist(buf_ptr) do
                w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "1")
@@ -289,7 +281,7 @@ function names_end_cb(_, signal, msg)
       local info = w.info_get_hashtable("irc_message_parse", { message = msg })
       if info and type(info) == "table" and info.channel then
          local buf_ptr = w.info_get("irc_buffer", server..","..info.channel)
-         if not empty(buf_ptr) and check_buffer_conditions(buf_ptr, true) then
+         if check_buffer_conditions(buf_ptr, true) then
             local active_nicks = g.buffers[w.buffer_get_string(buf_ptr, "full_name")]
             for nick_name, nick_ptr in iter_nicklist(buf_ptr) do
                if not active_nicks or not active_nicks[nick_name] then
@@ -308,15 +300,13 @@ function timer_cb()
    local buffers = g.buffers
    for buf_name, nicks in pairs(buffers) do
       local buf_ptr = w.buffer_search("==", buf_name)
-      if empty(buf_ptr) then
+      if buf_ptr == "" then
          g.buffers[buf_name] = nil
       else
          for nick_name, timestamp in pairs(nicks) do
             if timestamp < start_time then
                local nick_ptr = w.nicklist_search_nick(buf_ptr, "", nick_name)
-               if not empty(nick_ptr) then
-                  w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "0")
-               end
+               w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "0")
                g.buffers[buf_name][nick_name] = nil
             end
          end
