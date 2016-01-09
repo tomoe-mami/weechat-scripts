@@ -140,19 +140,7 @@ function config_cb(_, opt_name, opt_value)
    return w.WEECHAT_RC_OK
 end
 
-function pause_flag(buffer, flag)
-   if flag == nil then
-      return w.buffer_get_string(buffer, "localvar_"..script_name.."_paused") == "1"
-   else
-      local action = flag and "set" or "del"
-      w.buffer_set(buffer, "localvar_"..action.."_"..script_name.."_paused", "1")
-   end
-end
-
-function check_buffer_conditions(buffer, ignore_pause_flag)
-   if not ignore_pause_flag and pause_flag(buffer) then
-      return false
-   end
+function check_buffer_conditions(buffer)
    if g.config.conditions ~= "" then
       local result = w.string_eval_expression(
          g.config.conditions,
@@ -169,10 +157,10 @@ function recheck_buffer_conditions()
       local v
       if not check_buffer_conditions(buf_ptr, true) then
          v = "1"
-         if g.buffers[buf_name] then
-            g.buffers[buf_name] = nil
+         if g.buffers[buf_ptr] then
+            g.buffers[buf_ptr] = nil
          end
-      elseif not g.buffers[buf_name] then
+      elseif not g.buffers[buf_ptr] then
          v = "0"
       end
       if v ~= nil then
@@ -183,12 +171,21 @@ function recheck_buffer_conditions()
    end
 end
 
+function add_buffer(buf_ptr)
+   if not g.buffers[buf_ptr] then
+      g.buffers[buf_ptr] = { nicklist = {} }
+   end
+   return g.buffers[buf_ptr]
+end
+
 function hide_all_nicks(flag)
    flag = flag == false and "1" or "0"
    for buf_name, buf_ptr in iter_buffers() do
-      pause_flag(buf_ptr, false)
       local total_nicks = w.buffer_get_integer(buf_ptr, "nicklist_nicks_count")
       if total_nicks > 0 and check_buffer_conditions(buf_ptr, true) then
+         if flag then
+            add_buffer(buf_ptr)
+         end
          for nick_name, nick_ptr in iter_nicklist(buf_ptr) do
             w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", flag)
          end
@@ -197,15 +194,14 @@ function hide_all_nicks(flag)
 end
 
 function show_nick(buffer, nick_name, timestamp)
-   local buf_name = w.buffer_get_string(buffer, "full_name")
-   if not g.buffers[buf_name] then
-      g.buffers[buf_name] = {}
-   end
-   local ptr = w.nicklist_search_nick(buffer, "", nick_name)
-   if ptr ~= "" then
-      g.buffers[buf_name][nick_name] = timestamp
-      if w.nicklist_nick_get_integer(buffer, ptr, "visible") == 0 then
-         w.nicklist_nick_set(buffer, ptr, "visible", "1")
+   local buf = add_buffer(buffer)
+   if not buf.hold then
+      local ptr = w.nicklist_search_nick(buffer, "", nick_name)
+      if ptr ~= "" then
+         buf.nicklist[nick_name] = timestamp
+         if w.nicklist_nick_get_integer(buffer, ptr, "visible") == 0 then
+            w.nicklist_nick_set(buffer, ptr, "visible", "1")
+         end
       end
    end
 end
@@ -227,32 +223,33 @@ end
 function nick_added_cb(_, _, param)
    local buffer, nick_name = param:match("^([^,]-),(.+)$")
    if check_buffer_conditions(buffer) then
-      local ptr = w.nicklist_search_nick(buffer, "", nick_name)
-      w.nicklist_nick_set(buffer, ptr, "visible", "0")
+      local buf = add_buffer(buffer)
+      if not buf.hold then
+         local ptr = w.nicklist_search_nick(buffer, "", nick_name)
+         w.nicklist_nick_set(buffer, ptr, "visible", "0")
+      end
    end
    return w.WEECHAT_RC_OK
 end
 
 function nick_removing_cb(_, _, param)
    local buffer, nick_name = param:match("^([^,]-),(.+)$")
-   if check_buffer_conditions(buffer) then
-      local buf_name = w.buffer_get_string(buffer, "full_name")
-      if g.buffers[buf_name] and g.buffers[buf_name][nick_name] then
-         g.buffers[buf_name][nick_name] = nil
+      if g.buffers[buffer] and not g.buffers[buffer].hold then
+         g.buffers[buffer].nicklist[nick_name] = nil
+         -- weechat doesn't decrease nicklist_visible_count when an invisible nick
+         -- is removed. so we have to make sure it's visible first
+         local ptr = w.nicklist_search_nick(buffer, "", nick_name)
+         w.nicklist_nick_set(buffer, ptr, "visible", "1")
       end
-      -- weechat doesn't decrease nicklist_visible_count when an invisible nick
-      -- is removed. so we have to make sure it's visible first
-      local ptr = w.nicklist_search_nick(buffer, "", nick_name)
-      w.nicklist_nick_set(buffer, ptr, "visible", "1")
-   end
    return w.WEECHAT_RC_OK
 end
 
-function buffer_closing_cb(_, _, buffer)
-   if check_buffer_conditions(buffer) then
-      local buf_name = w.buffer_get_string(buffer, "full_name")
-      if g.buffers[buf_name] then
-         g.buffers[buf_name] = nil
+function buffer_close_cb(_, signal, buffer)
+   if g.buffers[buffer] then
+      if signal == "buffer_closing" then
+         g.buffers[buffer].hold = true
+      else
+         g.buffers[buffer] = nil
       end
    end
    return w.WEECHAT_RC_OK
@@ -265,9 +262,12 @@ function names_received_cb(_, modifier, server, msg)
       if channel then
          local buf_ptr = w.info_get("irc_buffer", server..","..channel)
          if check_buffer_conditions(buf_ptr) then
-            pause_flag(buf_ptr, true)
-            for nick_name, nick_ptr in iter_nicklist(buf_ptr) do
-               w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "1")
+            local buf = add_buffer(buf_ptr)
+            if not buf.hold then
+               buf.hold = true
+               for nick_name, nick_ptr in iter_nicklist(buf_ptr) do
+                  w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "1")
+               end
             end
          end
       end
@@ -281,15 +281,16 @@ function names_end_cb(_, signal, msg)
       local info = w.info_get_hashtable("irc_message_parse", { message = msg })
       if info and type(info) == "table" and info.channel then
          local buf_ptr = w.info_get("irc_buffer", server..","..info.channel)
-         if check_buffer_conditions(buf_ptr, true) then
-            local active_nicks = g.buffers[w.buffer_get_string(buf_ptr, "full_name")]
-            for nick_name, nick_ptr in iter_nicklist(buf_ptr) do
-               if not active_nicks or not active_nicks[nick_name] then
-                  w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "0")
-               end
-            end
-            pause_flag(buf_ptr, false)
+         if not g.buffers[buf_ptr] then
+            return w.WEECHAT_RC_OK
          end
+         local buf = g.buffers[buf_ptr]
+         for nick_name, nick_ptr in iter_nicklist(buf_ptr) do
+            if not buf.nicklist[nick_name] then
+               w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "0")
+            end
+         end
+         buf.hold = nil
       end
    end
    return w.WEECHAT_RC_OK
@@ -297,21 +298,21 @@ end
 
 function timer_cb()
    local start_time = os.time() - (g.config.delay * 60)
-   local buffers = g.buffers
-   for buf_name, nicks in pairs(buffers) do
-      local buf_ptr = w.buffer_search("==", buf_name)
-      if buf_ptr == "" then
-         g.buffers[buf_name] = nil
-      else
-         for nick_name, timestamp in pairs(nicks) do
+   local b = {}
+   for buf_ptr, buf in pairs(g.buffers) do
+      b[buf_ptr] = { hold = buf.hold, nicklist = {} }
+      if not buf.hold then
+         for nick_name, timestamp in pairs(buf.nicklist) do
             if timestamp < start_time then
                local nick_ptr = w.nicklist_search_nick(buf_ptr, "", nick_name)
                w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "0")
-               g.buffers[buf_name][nick_name] = nil
+            else
+               b[buf_ptr].nicklist[nick_name] = timestamp
             end
          end
       end
    end
+   g.buffers = b
 end
 
 function hook_timer()
@@ -319,7 +320,11 @@ function hook_timer()
       w.unhook(g.hooks.timer)
    end
    if g.config.delay > 0 then
-      g.hooks.timer = w.hook_timer(60000, 0, 0, "timer_cb", "")
+      local interval = 60000
+      if g.config.delay >= 10 then
+         interval = interval * math.floor(g.config.delay / (math.log10(g.config.delay) * 4))
+      end
+      g.hooks.timer = w.hook_timer(interval, 0, 0, "timer_cb", "")
    else
       g.hooks.timer = nil
    end
@@ -334,7 +339,7 @@ end
 
 function init_hooks()
    w.hook_config("plugins.var.lua."..script_name..".*", "config_cb", "")
-   w.hook_signal("buffer_closing", "buffer_closing_cb", "")
+   w.hook_signal("buffer_clos*", "buffer_close_cb", "")
    w.hook_signal("nicklist_nick_added", "nick_added_cb", "")
    w.hook_signal("nicklist_nick_removing", "nick_removing_cb", "")
    w.hook_modifier("irc_in2_353", "names_received_cb", "")
