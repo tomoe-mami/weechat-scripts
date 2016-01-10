@@ -1,4 +1,3 @@
-local json = require "cjson"
 w, table.unpack, script_name = weechat, table.unpack or unpack, "active_nicklist"
 g = {
    config = {},
