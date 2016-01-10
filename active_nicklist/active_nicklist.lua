@@ -157,17 +157,15 @@ function recheck_buffer_conditions()
    for buf_name, buf_ptr in iter_buffers() do
       local v
       if not check_buffer_conditions(buf_ptr, true) then
-         v = "1"
+         v = true
          if g.buffers[buf_ptr] then
             g.buffers[buf_ptr] = nil
          end
       elseif not g.buffers[buf_ptr] then
-         v = "0"
+         v = false
       end
       if v ~= nil then
-         for nick_name, nick_ptr in iter_nicklist(buf_ptr) do
-            w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", v)
-         end
+         set_all_nicks_visibility(buf_ptr, v)
       end
    end
 end
@@ -179,6 +177,13 @@ function add_buffer(buf_ptr)
    return g.buffers[buf_ptr]
 end
 
+function set_all_nicks_visibility(buf_ptr, flag)
+   flag = flag and "1" or "0"
+   for nick_name, nick_ptr in iter_nicklist(buf_ptr) do
+      w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", flag)
+   end
+end
+
 function hide_all_nicks(flag)
    flag = flag == false and "1" or "0"
    for buf_name, buf_ptr in iter_buffers() do
@@ -187,9 +192,7 @@ function hide_all_nicks(flag)
          if flag then
             add_buffer(buf_ptr)
          end
-         for nick_name, nick_ptr in iter_nicklist(buf_ptr) do
-            w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", flag)
-         end
+         set_all_nicks_visibility(buf_ptr, not flag)
       end
    end
 end
@@ -262,9 +265,7 @@ function names_received_cb(_, modifier, server, msg)
             local buf = add_buffer(buf_ptr)
             if not buf.hold then
                buf.hold = true
-               for nick_name, nick_ptr in iter_nicklist(buf_ptr) do
-                  w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "1")
-               end
+               set_all_nicks_visibility(buf_ptr, true)
             end
          end
       end
@@ -301,6 +302,7 @@ function part_channel_cb(_, signal, msg)
          for chan in info.channel:gmatch("([^,]+)") do
             local buf_ptr = w.info_get("irc_buffer", server..","..chan)
             g.buffers[buf_ptr] = nil
+            set_all_nicks_visibility(buf_ptr, true)
          end
       end
    end
@@ -315,6 +317,7 @@ function quit_server_cb(_, signal, msg)
          while w.infolist_next(list) == 1 do
             local buf_ptr = w.infolist_pointer(list, "buffer")
             g.buffers[buf_ptr] = nil
+            set_all_nicks_visibility(buf_ptr, true)
          end
          w.infolist_free(list)
       end
