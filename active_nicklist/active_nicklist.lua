@@ -1,3 +1,4 @@
+local json = require "cjson"
 w, table.unpack, script_name = weechat, table.unpack or unpack, "active_nicklist"
 g = {
    config = {},
@@ -229,7 +230,9 @@ function nick_added_cb(_, _, param)
       local buf = add_buffer(buffer)
       if not buf.hold then
          local ptr = w.nicklist_search_nick(buffer, "", nick_name)
-         w.nicklist_nick_set(buffer, ptr, "visible", "0")
+         if not buf.nicklist[nick_name] then
+            w.nicklist_nick_set(buffer, ptr, "visible", "0")
+         end
       end
    end
    return w.WEECHAT_RC_OK
@@ -254,7 +257,7 @@ function buffer_closed_cb(_, _, buffer)
    return w.WEECHAT_RC_OK
 end
 
-function names_received_cb(_, modifier, server, msg)
+function names_received_cb(_, _, server, msg)
    local info = w.info_get_hashtable("irc_message_parse", { message = msg })
    if info and type(info) == "table" and info.text then
       local channel = info.text:match("^%S+ (%S+)")
@@ -291,6 +294,19 @@ function names_end_cb(_, signal, msg)
       end
    end
    return w.WEECHAT_RC_OK
+end
+
+function nick_changes_cb(_, _, server, msg)
+   local info = w.info_get_hashtable("irc_message_parse", { message = msg })
+   if info and type(info) == "table" and info.nick and info.arguments then
+      for buf_ptr, buf in pairs(g.buffers) do
+         local buf_server = w.buffer_get_string(buf_ptr, "localvar_server")
+         if buf_server == server and buf.nicklist[info.nick] then
+            buf.nicklist[info.arguments] = buf.nicklist[info.nick]
+         end
+      end
+   end
+   return msg
 end
 
 function part_channel_cb(_, signal, msg)
@@ -408,6 +424,7 @@ function init_hooks()
    w.hook_signal("nicklist_nick_removing", "nick_removing_cb", "")
    w.hook_modifier("irc_in2_353", "names_received_cb", "")
    w.hook_signal("*,irc_in_366", "names_end_cb", "")
+   w.hook_modifier("irc_in2_nick", "nick_changes_cb", "")
    w.hook_signal("*,irc_out_part", "part_channel_cb", "")
    w.hook_signal("*,irc_out_quit", "quit_server_cb", "")
    hook_print()
