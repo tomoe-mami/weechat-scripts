@@ -1,3 +1,4 @@
+local json = require "cjson"
 w, table.unpack, script_name = weechat, table.unpack or unpack, "active_nicklist"
 g = {
    config = {},
@@ -234,23 +235,19 @@ end
 
 function nick_removing_cb(_, _, param)
    local buffer, nick_name = param:match("^([^,]-),(.+)$")
-      if g.buffers[buffer] and not g.buffers[buffer].hold then
-         g.buffers[buffer].nicklist[nick_name] = nil
-         -- weechat doesn't decrease nicklist_visible_count when an invisible nick
-         -- is removed. so we have to make sure it's visible first
-         local ptr = w.nicklist_search_nick(buffer, "", nick_name)
-         w.nicklist_nick_set(buffer, ptr, "visible", "1")
-      end
+   if g.buffers[buffer] and not g.buffers[buffer].hold then
+      g.buffers[buffer].nicklist[nick_name] = nil
+      -- weechat doesn't decrease nicklist_visible_count when an invisible nick
+      -- is removed. so we have to make sure it's visible first
+      local ptr = w.nicklist_search_nick(buffer, "", nick_name)
+      w.nicklist_nick_set(buffer, ptr, "visible", "1")
+   end
    return w.WEECHAT_RC_OK
 end
 
-function buffer_close_cb(_, signal, buffer)
+function buffer_closed_cb(_, _, buffer)
    if g.buffers[buffer] then
-      if signal == "buffer_closing" then
-         g.buffers[buffer].hold = true
-      else
-         g.buffers[buffer] = nil
-      end
+      g.buffers[buffer] = nil
    end
    return w.WEECHAT_RC_OK
 end
@@ -296,6 +293,35 @@ function names_end_cb(_, signal, msg)
    return w.WEECHAT_RC_OK
 end
 
+function part_channel_cb(_, signal, msg)
+   local server = signal:match("^([^,]+)")
+   if server then
+      local info = w.info_get_hashtable("irc_message_parse", { message = msg })
+      if info and type(info) == "table" and info.channel then
+         for chan in info.channel:gmatch("([^,]+)") do
+            local buf_ptr = w.info_get("irc_buffer", server..","..chan)
+            g.buffers[buf_ptr] = nil
+         end
+      end
+   end
+   return w.WEECHAT_RC_OK
+end
+
+function quit_server_cb(_, signal, msg)
+   local server = signal:match("^([^,]+)")
+   if server then
+      local list = w.infolist_get("irc_channel", "", server)
+      if list ~= "" then
+         while w.infolist_next(list) == 1 do
+            local buf_ptr = w.infolist_pointer(list, "buffer")
+            g.buffers[buf_ptr] = nil
+         end
+         w.infolist_free(list)
+      end
+   end
+   return w.WEECHAT_RC_OK
+end
+
 function timer_cb()
    local start_time = os.time() - (g.config.delay * 60)
    local b = {}
@@ -316,13 +342,14 @@ function timer_cb()
 end
 
 function hook_timer()
+   local delay = g.config.delay
    if g.hooks.timer then
       w.unhook(g.hooks.timer)
    end
-   if g.config.delay > 0 then
+   if delay > 0 then
       local interval = 60000
-      if g.config.delay >= 10 then
-         interval = interval * math.floor(g.config.delay / (math.log10(g.config.delay) * 4))
+      if delay >= 10 then
+         interval = interval * math.floor(delay / (math.log10(delay) * 4))
       end
       g.hooks.timer = w.hook_timer(interval, 0, 0, "timer_cb", "")
    else
@@ -337,15 +364,60 @@ function hook_print()
    g.hooks.print = w.hook_print("", g.config.tags, "", 0, "print_cb", "")
 end
 
+function cmd_toggle(buf_ptr)
+   local buf = g.buffers[buf_ptr]
+   if buf then
+      buf.hold = not buf.hold
+      for nick_name, nick_ptr in iter_nicklist(buf_ptr) do
+         local flag = "1"
+         if not buf.hold then
+            if buf.nicklist[nick_name] then
+               buf.nicklist[nick_name] = os.time()
+            else
+               flag = "0"
+            end
+         end
+         w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", flag)
+      end
+   end
+   return w.WEECHAT_RC_OK
+end
+
+function command_cb(_, buf_ptr, param)
+   if not param or param == "" then
+      return w.WEECHAT_RC_ERROR
+   end
+
+   local callbacks = {
+      toggle = cmd_toggle
+   }
+
+   if not callbacks[param] then
+      w.print("", w.prefix("error")..script_name..": Unknown action: "..param)
+      return w.WEECHAT_RC_ERROR
+   end
+   return callbacks[param](buf_ptr)
+end
+
 function init_hooks()
    w.hook_config("plugins.var.lua."..script_name..".*", "config_cb", "")
-   w.hook_signal("buffer_clos*", "buffer_close_cb", "")
+   w.hook_signal("buffer_closed", "buffer_closed_cb", "")
    w.hook_signal("nicklist_nick_added", "nick_added_cb", "")
    w.hook_signal("nicklist_nick_removing", "nick_removing_cb", "")
    w.hook_modifier("irc_in2_353", "names_received_cb", "")
    w.hook_signal("*,irc_in_366", "names_end_cb", "")
+   w.hook_signal("*,irc_out_part", "part_channel_cb", "")
+   w.hook_signal("*,irc_out_quit", "quit_server_cb", "")
    hook_print()
    hook_timer()
+
+   w.hook_command(
+      script_name,
+      "Control active_nicklist",
+      "toggle",
+      "toggle: Toggle current buffer",
+      "toggle",
+      "command_cb", "")
 end
 
 function unload_cb()
