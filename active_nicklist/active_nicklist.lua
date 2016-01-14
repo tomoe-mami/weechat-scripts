@@ -1,4 +1,5 @@
 w, table.unpack, script_name = weechat, table.unpack or unpack, "active_nicklist"
+
 g = {
    config = {},
    defaults = {
@@ -240,7 +241,6 @@ end
 function nick_removing_cb(_, _, param)
    local buffer, nick_name = param:match("^([^,]-),(.+)$")
    if g.buffers[buffer] and not g.buffers[buffer].hold then
-      g.buffers[buffer].nicklist[nick_name] = nil
       -- weechat doesn't decrease nicklist_visible_count when an invisible nick
       -- is removed. so we have to make sure it's visible first
       local ptr = w.nicklist_search_nick(buffer, "", nick_name)
@@ -250,9 +250,7 @@ function nick_removing_cb(_, _, param)
 end
 
 function buffer_closed_cb(_, _, buffer)
-   if g.buffers[buffer] then
-      g.buffers[buffer] = nil
-   end
+   g.buffers[buffer] = nil
    return w.WEECHAT_RC_OK
 end
 
