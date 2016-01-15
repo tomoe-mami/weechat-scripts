@@ -298,7 +298,7 @@ function nick_changes_cb(_, _, server, msg)
       for buf_ptr, buf in pairs(g.buffers) do
          local buf_server = w.buffer_get_string(buf_ptr, "localvar_server")
          if buf_server == server and buf.nicklist[info.nick] then
-            buf.nicklist[info.arguments] = buf.nicklist[info.nick]
+            buf.nicklist[info.arguments:sub(2)] = buf.nicklist[info.nick]
          end
       end
    end
