@@ -5,11 +5,10 @@ g = {
    defaults = {
       delay = {
          type = "integer",
-         min = 0,
+         min = 1,
          max = 10080,
          value = "5", -- default value will be replaced by irc.look.smart_filter_delay
-         description = [[Delay before hiding nick again (in minutes,
-         values: 0..10080). Set to 0 to disable (once active, nick will stay visible).]]
+         description = "Delay before hiding nick again (in minutes, values: 1..10080)"
       },
       ignore_filtered = {
          type = "boolean",
