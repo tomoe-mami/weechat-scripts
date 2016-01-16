@@ -295,10 +295,11 @@ end
 function nick_changes_cb(_, _, server, msg)
    local info = w.info_get_hashtable("irc_message_parse", { message = msg })
    if info and type(info) == "table" and info.nick and info.arguments then
+      info.arguments = info.arguments:gsub("^:", "")
       for buf_ptr, buf in pairs(g.buffers) do
          local buf_server = w.buffer_get_string(buf_ptr, "localvar_server")
          if buf_server == server and buf.nicklist[info.nick] then
-            buf.nicklist[info.arguments:sub(2)] = buf.nicklist[info.nick]
+            buf.nicklist[info.arguments] = buf.nicklist[info.nick]
          end
       end
    end
