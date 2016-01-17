@@ -1,4 +1,4 @@
-w, table.unpack, script_name = weechat, table.unpack or unpack, "active_nicklist"
+w, table.unpack, script_name = weechat, table.unpack or unpack, "active_nicks"
 
 g = {
    config = {},
@@ -429,7 +429,7 @@ function init_hooks()
 
    w.hook_command(
       script_name,
-      "Control active_nicklist",
+      "Control "..script_name,
       "toggle",
       "toggle: Toggle current buffer",
       "toggle",

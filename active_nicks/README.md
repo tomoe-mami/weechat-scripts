@@ -1,4 +1,4 @@
-active_nicklist
+active_nicks
 ===============
 
 Show only active users in nicklist.
