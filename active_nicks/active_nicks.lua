@@ -223,13 +223,12 @@ function print_cb(_, buffer, time, tags, displayed)
 end
 
 function nick_added_cb(_, _, param)
-   local buffer, nick_name = param:match("^([^,]-),(.+)$")
-   if check_buffer_conditions(buffer) then
-      local buf = add_buffer(buffer)
+   if check_buffer_conditions(param.buffer) then
+      local buf = add_buffer(param.buffer)
       if not buf.hold then
-         local ptr = w.nicklist_search_nick(buffer, "", nick_name)
+         local nick_name = w.nicklist_nick_get_string(param.buffer, param.nick, "name")
          if not buf.nicklist[nick_name] then
-            w.nicklist_nick_set(buffer, ptr, "visible", "0")
+            w.nicklist_nick_set(param.buffer, param.nick, "visible", "0")
          end
       end
    end
@@ -237,12 +236,10 @@ function nick_added_cb(_, _, param)
 end
 
 function nick_removing_cb(_, _, param)
-   local buffer, nick_name = param:match("^([^,]-),(.+)$")
-   if g.buffers[buffer] and not g.buffers[buffer].hold then
+   if g.buffers[param.buffer] and not g.buffers[param.buffer].hold then
       -- weechat doesn't decrease nicklist_visible_count when an invisible nick
       -- is removed. so we have to make sure it's visible first
-      local ptr = w.nicklist_search_nick(buffer, "", nick_name)
-      w.nicklist_nick_set(buffer, ptr, "visible", "1")
+      w.nicklist_nick_set(param.buffer, param.nick, "visible", "1")
    end
    return w.WEECHAT_RC_OK
 end
@@ -416,8 +413,8 @@ end
 function init_hooks()
    w.hook_config("plugins.var.lua."..script_name..".*", "config_cb", "")
    w.hook_signal("buffer_closed", "buffer_closed_cb", "")
-   w.hook_signal("nicklist_nick_added", "nick_added_cb", "")
-   w.hook_signal("nicklist_nick_removing", "nick_removing_cb", "")
+   w.hook_hsignal("nicklist_nick_added", "nick_added_cb", "")
+   w.hook_hsignal("nicklist_nick_removing", "nick_removing_cb", "")
    w.hook_modifier("irc_in2_353", "names_received_cb", "")
    w.hook_signal("*,irc_in_366", "names_end_cb", "")
    w.hook_modifier("irc_in2_nick", "nick_changes_cb", "")
