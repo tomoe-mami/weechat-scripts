@@ -49,7 +49,7 @@ function main()
       end
 
       init_config()
-      hide_all_nicks()
+      hide_all_nicks(true)
       init_hooks()
    end
 end
@@ -155,7 +155,7 @@ end
 function recheck_buffer_conditions()
    for buf_name, buf_ptr in iter_buffers() do
       local v
-      if not check_buffer_conditions(buf_ptr, true) then
+      if not check_buffer_conditions(buf_ptr) then
          v = true
          if g.buffers[buf_ptr] then
             g.buffers[buf_ptr] = nil
@@ -184,10 +184,9 @@ function set_all_nicks_visibility(buf_ptr, flag)
 end
 
 function hide_all_nicks(flag)
-   flag = flag == false and "1" or "0"
    for buf_name, buf_ptr in iter_buffers() do
       local total_nicks = w.buffer_get_integer(buf_ptr, "nicklist_nicks_count")
-      if total_nicks > 0 and check_buffer_conditions(buf_ptr, true) then
+      if total_nicks > 0 and check_buffer_conditions(buf_ptr) then
          if flag then
             add_buffer(buf_ptr)
          end
