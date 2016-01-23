@@ -25,35 +25,33 @@ function main()
 end
 
 function change_short_name_cb(mode, _, buf_ptr)
+   local orig_name
+   if mode == "channel" then
+      orig_name = w.buffer_get_string(buf_ptr, "localvar_channel")
+   elseif mode == "server" then
+      orig_name = buf_ptr
+      buf_ptr = w.buffer_search("irc", "server."..orig_name)
+   else
+      orig_name = w.buffer_get_string(buf_ptr, "short_name")
+   end
    if not buffers[buf_ptr] then
       buffers[buf_ptr] = true
-      local orig_name
-      if mode == "channel" then
-         orig_name = w.buffer_get_string(buf_ptr, "localvar_channel")
-      elseif mode == "server" then
-         orig_name = buf_ptr
-         buf_ptr = w.buffer_search("irc", "server."..orig_name)
-      else
-         orig_name = w.buffer_get_string(buf_ptr, "short_name")
-      end
       local stripped_name = w.string_remove_color(orig_name, "")
       local new_name = w.info_get("irc_nick_color", stripped_name)..stripped_name
       if orig_name ~= new_name then
          w.buffer_set(buf_ptr, "short_name", new_name)
       end
+      buffers[buf_ptr] = nil
    end
-   buffers[buf_ptr] = nil
    return w.WEECHAT_RC_OK
 end
 
 function update_all_short_names()
-   local list = w.infolist_get("buffer", "", "")
-   if list ~= "" then
-      while w.infolist_next(list) == 1 do
-         local buf_ptr = w.infolist_pointer(list, "pointer")
-         change_short_name_cb("rename", "", buf_ptr)
-      end
-      w.infolist_free(list)
+   local hbuf = w.hdata_get("buffer")
+   local buffer = w.hdata_get_list(hbuf, "gui_buffers")
+   while buffer and buffer ~= "" do
+      change_short_name_cb("rename", "", buffer)
+      buffer = w.hdata_move(hbuf, buffer, 1)
    end
 end
 
