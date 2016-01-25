@@ -10,5 +10,5 @@ using:
     /script install name-of-script.lua
 
 
-[1]: http://www.weechat.org
-[2]: /weechat/scripts
+[1]: https://weechat.org
+[2]: https://github.com/weechat/scripts
