@@ -1,29 +1,14 @@
-These are a few Lua scripts I wrote for [Weechat][].
+These are a few Lua scripts I wrote for [Weechat][1]. If you want to use any
+script in this repo, put the lua file in your `~/.weechat/lua` directory and then
+inside WeeChat run the following command:
 
-- **pastebuf** is for viewing the content of a pastebin URL.
+    /lua load lua/name-of-script.lua
 
-- **urlselect** is for interactively select URLs in a buffer using a bar.
+Scripts that are already in [official WeeChat scripts repo][2] can be installed
+using:
 
-- **prettype** is for prettifying the text you typed in input bar with 
-  auto-capitalization and proper unicode symbols.
+    /script install name-of-script.lua
 
-- **chatbuf_color** is for colorizing all lines in a buffer with the same color.
-  Useful for merged buffers.
 
-- **mpdbitl** is the 'Now Playing' status for [bitlbee][] + [mpd][]
-
-- **coldlist** is half-assed hotlist-like notification for merged buffers.
-
-- **tagattr** is for adding labels and apply custom color to messages with
-  certain tags. **This is obsolete since Weechat 0.4.4**. A trigger can do its
-  job better.
-
-- **mpd_current_song** is bar item for displaying currently playing song on MPD.
-  **This is obsolete too since Weechat 0.4.4**. You can do similar thing with a
-  timer trigger combined with script text_item.py
-
-[weechat]: http://www.weechat.org
-[xclip]: http://sourceforge.net/projects/xclip/
-[bitlbee]: http://bitlbee.org
-[mpd]: http://mpd.wikia.com
-[tmux]: http://tmux.sourceforge.net/
+[1]: http://www.weechat.org
+[2]: /weechat/scripts
