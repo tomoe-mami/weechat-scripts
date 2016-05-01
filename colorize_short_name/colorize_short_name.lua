@@ -1,6 +1,8 @@
 w, script_name = weechat, "colorize_short_name"
 
 buffers = {}
+nick_color_info = "irc_nick_color"
+nick_color_opt_mask = "irc.look.nick_color*"
 
 function main()
    local reg_ok = w.register(
@@ -18,7 +20,13 @@ function main()
       w.hook_signal("irc_channel_opened", "change_short_name_cb", "channel")
       w.hook_signal("irc_pv_opened", "change_short_name_cb", "channel")
       w.hook_config("weechat.color.chat_nick_colors", "config_cb", "")
-      w.hook_config("irc.look.nick_color*", "config_cb", "")
+
+      local wee_ver = tonumber(w.info_get("version_number", "") or 0)
+      if wee_ver >= 0x01050000 then
+         nick_color_info = "nick_color"
+         nick_color_opt_mask = "weechat.look.nick_color*"
+      end
+      w.hook_config(nick_color_opt_mask, "config_cb", "")
 
       update_all_short_names()
    end
@@ -37,7 +45,7 @@ function change_short_name_cb(mode, _, buf_ptr)
    if not buffers[buf_ptr] then
       buffers[buf_ptr] = true
       local stripped_name = w.string_remove_color(orig_name, "")
-      local new_name = w.info_get("irc_nick_color", stripped_name)..stripped_name
+      local new_name = w.info_get(nick_color_info, stripped_name)..stripped_name
       if orig_name ~= new_name then
          w.buffer_set(buf_ptr, "short_name", new_name)
       end
