@@ -1,5 +1,7 @@
 # mpd_events
 
+*(Requires Weechat ≥ 1.5, MPD ≥ 0.14, and [LuaSocket][])*
+
 A script that sends hsignal on any MPD event like song changed, playback paused,
 song added to current playlist, etc.
 
@@ -11,8 +13,5 @@ away message to the currently playing song:
     /trigger set mpd conditions ${events} =~ ,song_changed,
     /trigger set mpd command /away -all Listening to ${song.artist} - ${song.title}
 
-***
-
-Requires Weechat ≥ 1.5, MPD ≥ 0.14, and [LuaSocket][].
 
 [luasocket]: https://luarocks.org/modules/luarocks/luasocket

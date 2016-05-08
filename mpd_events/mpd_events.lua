@@ -1,10 +1,36 @@
 require "socket"
-
+table.unpack = table.unpack or unpack
 w, script_name = weechat, "mpd_events"
+
 g = {
-   config = {
-      hostname = "localhost",
-      port = 6600
+   config = {},
+   defaults = {
+      hostname = {
+         value = "localhost",
+         type = "string",
+         description = "Hostname of MPD server"
+      },
+      port = {
+         value = "6600",
+         type = "integer",
+         min = 1,
+         max = 65535,
+         description = "Port of MPD server"
+      },
+      password = {
+         value = "",
+         type = "string",
+         description = "Optional authentication password"
+      },
+      subsystems = {
+         value = "",
+         type = "list",
+         description = [[
+Comma separated list of subsystems the script should listen to. If set to empty
+string, it will listen to any subsystem. See description of `idle` command
+in https://www.musicpd.org/doc/protocol/command_reference.html for list of
+available subsystems.]]
+      }
    },
    sock = "",
    last_info = {},
@@ -37,24 +63,36 @@ end
 
 function mpd_connect()
    local sock, conf = socket.tcp(), g.config
-   sock:settimeout(conf.timeout, "t")
-   if not sock:connect(conf.hostname, conf.port) then
-      return false, string.format("Could not connect to %s:%d", conf.hostname, conf.port)
+   local status, msg = sock:connect(conf.hostname, conf.port)
+   if not status then
+      print("Error: Could not connect to ${hostname}:${port}: ${message}",
+            { hostname = conf.hostname, port = conf.port, message = msg })
+      return false
    end
-   local line = sock:receive("*l")
+   local line, err = sock:receive("*l")
    if not line then
-      return false, "No response from MPD server"
+      print("Error: "..err)
+      return false
    end
    local version = line:match("^OK MPD (.+)")
    if not version then
-      return false, "Unknown welcome message: "..line
+      print("Error: Unknown welcome message: ${line}", { line = line })
+      return false
    end
    g.sock, g.version = sock, version
    if conf.password and conf.password ~= "" then
-      if mpd_login(conf.password) then
-      end
+      return mpd_login(conf.password)
    end
    return true
+end
+
+function mpd_disconnect()
+   if g.idling then
+      mpd_command("noidle")
+   end
+   mpd_command("close")
+   g.sock:close()
+   g.sock = nil
 end
 
 function mpd_escape_arg(s)
@@ -64,6 +102,7 @@ function mpd_escape_arg(s)
    elseif t == "boolean" then
       return s and 1 or 0
    elseif t == "string" then
+      return (s:gsub('\\', '\\\\'):gsub('"', '\\"'))
    else
       return '""'
    end
@@ -80,11 +119,11 @@ function mpd_command(command, ...)
 end
 
 function mpd_read_response()
-   local line = g.sock:receive("*l")
+   local line, err_msg = g.sock:receive("*l")
    local done, e, k, v = true, {}
    if not line then
       e.code = -1
-      e.message = "No response"
+      e.message = err_msg
    elseif line:sub(1, 4) == "ACK " then
       e.code, e.index, e.command, e.message =
          line:match("^ACK %[(%d+)@(%d+)%] {([^}]*)} (.*)")
@@ -134,7 +173,7 @@ function mpd_login(password)
 end
 
 function mpd_idle()
-   mpd_command("idle")
+   mpd_command("idle", table.unpack(g.config.subsystems))
    local result, err = mpd_result_table({ list = true })
    if err.code then
       return err.code..":"..err.message
@@ -225,15 +264,14 @@ function send_events(result)
       if send_signal then
          w.hook_hsignal_send(script_name, info)
       end
+      start_idle_process()
    end
-   start_idle_process()
 end
 
 function idle_process_cb(_, cmd, ret, out, err)
    if ret > 0 or ret == w.WEECHAT_HOOK_PROCESS_ERROR then
       if err and err ~= "" then
-         print("${color:chat_delimiters}[${color:reset}error"..
-               "${color:chat_delimiters}]${color:reset} ${msg}", { msg = err })
+         print("Error: ${msg}", { msg = err })
       end
    elseif ret == 0 or ret == w.WEECHAT_HOOK_PROCESS_RUNNING then
       g.process_output = g.process_output..out
@@ -253,12 +291,59 @@ function start_idle_process()
    end
 end
 
-function unload_cb()
-   if g.idling then
-      mpd_command("noidle")
+function convert_option_value(value, info)
+   if info.type == "integer" then
+      value = tonumber(value) or 0
+      if (info.min and value < info.min) or (info.max and value > info.max) then
+         return tonumber(info.value)
+      end
+   elseif info.type == "boolean" then
+      value = w.config_string_to_boolean(value) == 1
+   elseif info.type == "list" then
+      local t = {}
+      for v in value:gmatch("([^,]+)") do
+         table.insert(t, v)
+      end
+      value = t
    end
-   mpd_command("close")
-   g.sock:close()
+   return value
+end
+
+function config_init()
+   for name, info in pairs(g.defaults) do
+      local value
+      if w.config_is_set_plugin(name) == 1 then
+         value = w.config_get_plugin(name)
+      else
+         w.config_set_plugin(name, info.value)
+         w.config_set_desc_plugin(name, (info.description:gsub("\n", " ")))
+         value = info.value
+      end
+      g.config[name] = convert_option_value(value, info)
+   end
+   w.hook_config("plugins.var.lua."..script_name..".*", "config_cb", "")
+end
+
+function config_cb(_, name, value)
+   name = name:gsub("^plugins%.var%.lua%."..script_name..".", "")
+   local info = g.defaults[name]
+   if info then
+      value = convert_option_value(value, info)
+      if value ~= nil then
+         g.config[name] = value
+      end
+      if name == "hostname" or name == "port" or
+         name == "timeout" or name == "password" then
+         mpd_disconnect()
+         if mpd_connect() then
+            start_idle_process()
+         end
+      end
+   end
+end
+
+function unload_cb()
+   mpd_disconnect()
 end
 
 function main()
@@ -271,9 +356,11 @@ function main()
       if wee_ver < 0x01050000 then
          w.print("", w.prefix("error").."This script requires Weechat >= 1.5")
       else
-         mpd_connect()
-         collect_hsignal_data()
-         start_idle_process()
+         config_init()
+         if mpd_connect() then
+            collect_hsignal_data()
+            start_idle_process()
+         end
       end
    end
 end
