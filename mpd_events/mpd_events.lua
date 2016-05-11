@@ -191,18 +191,18 @@ function mpd_get_info()
    mpd_command("currentsong")
    local t2 = mpd_result_table()
    t2.time = seconds_to_duration(t2.time)
+   if t2.file then
+      t2.basename = t2.file:match("([^/]+)$")
+   end
 
-   mpd_command("stats")
-   local t3 = mpd_result_table()
-
-   return t1, t2, t3
+   return t1, t2
 end
 
 function collect_hsignal_data(subsystems)
    subsystems = ","..(subsystems or "")..","
 
    local send_signal = true
-   local status, song, stat = mpd_get_info()
+   local status, song = mpd_get_info()
    local events, last_info = {}, g.last_info
    if subsystems:match(",database,") then
       table.insert(events, status.updating_db and "db_updating" or "db_updated")
@@ -243,7 +243,7 @@ function collect_hsignal_data(subsystems)
    end
 
    local info = {}
-   for p, t in pairs({ status = status, song = song, stat = stat}) do
+   for p, t in pairs({ status = status, song = song }) do
       for k, v in pairs(t) do
          info[p.."."..k] = v
       end
@@ -342,6 +342,10 @@ function config_cb(_, name, value)
    end
 end
 
+function info_cb()
+   return g.last_info
+end
+
 function unload_cb()
    mpd_disconnect()
 end
@@ -361,6 +365,10 @@ function main()
             collect_hsignal_data()
             start_idle_process()
          end
+
+         w.hook_info_hashtable(
+            script_name.."_data", "Current data from MPD",
+            "", "", "info_cb", "")
       end
    end
 end
