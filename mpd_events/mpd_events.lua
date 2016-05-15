@@ -264,7 +264,9 @@ function send_events(result)
       if send_signal then
          w.hook_hsignal_send(script_name, info)
       end
-      start_idle_process()
+      if g.sock then
+         start_idle_process()
+      end
    end
 end
 
@@ -346,6 +348,16 @@ function info_cb()
    return g.last_info
 end
 
+function upgrade_cb(_, _, cmd)
+   if cmd == "/upgrade" or cmd:sub(1, 9) == "/upgrade " then
+      mpd_disconnect()
+      w.unhook_all()
+      w.command("", "/wait 300ms "..cmd)
+      return w.WEECHAT_RC_OK_EAT
+   end
+   return w.WEECHAT_RC_OK
+end
+
 function unload_cb()
    mpd_disconnect()
 end
@@ -366,6 +378,7 @@ function main()
             start_idle_process()
          end
 
+         w.hook_command_run("/upgrade*", "upgrade_cb", "")
          w.hook_info_hashtable(
             script_name.."_data", "Current data from MPD",
             "", "", "info_cb", "")
