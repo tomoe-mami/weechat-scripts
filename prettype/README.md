@@ -29,8 +29,14 @@ escape` (as usual, bind it to a key to make it useful). The command has to be
 called twice, one at the beginning of portion of text you want to protect and
 another one at the end of it.
 
-Nick completion that occurs at the start of input and URLs will be escaped
-automatically.
+Portion of text that looks like URL will be escaped automatically.
+
+Automatic nicks and channels completion can be done if you use the alternative
+completion items provided by this script: `prettype_nicks` (for nicks) and
+`prettype_channels` (for channels). For example:
+
+    /set weechat.completion.default_template "%(prettype_nicks)|%(prettype_channels)"
+
 
 ### Original Text
 

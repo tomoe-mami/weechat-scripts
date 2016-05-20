@@ -228,30 +228,95 @@ function tab_cb(_, buffer, command)
    return w.WEECHAT_RC_OK
 end
 
-function completion_nicks_cb(_, item, buffer, completion)
-   local ptr_group = w.hdata_pointer(w.hdata_get("buffer"), buffer, "nicklist_root")
-   local ptr_nick
+function completion_irc_nicks(buffer, completion)
+   local buffer_type = w.buffer_get_string(buffer, "localvar_type")
+   local current_server = w.buffer_get_string(buffer, "localvar_server")
+   local current_channel = w.buffer_get_string(buffer, "localvar_channel")
 
-   if ptr_group and ptr_group ~= "" then
-      local h_group, h_nick = w.hdata_get("nick_group"), w.hdata_get("nick")
-      ptr_group = w.hdata_pointer(h_group, ptr_group, "children")
-      while ptr_group and ptr_group ~= "" do
-         ptr_nick = w.hdata_pointer(h_group, ptr_group, "nicks")
-         while ptr_nick and ptr_nick ~= "" do
-            w.hook_completion_list_add(completion,
-                                       ESC..w.hdata_string(h_nick, ptr_nick, "name")..ESC,
-                                       1,
-                                       w.WEECHAT_LIST_POS_END)
-            ptr_nick = w.hdata_pointer(h_nick, ptr_nick, "next_nick")
+   local h_server = w.hdata_get("irc_server")
+   local servers = w.hdata_get_list(h_server, "irc_servers")
+   local server = w.hdata_search(h_server, servers, "${irc_server.name} == "..current_server, 1)
+   if not server or server == "" then
+      return
+   end
+
+   local h_channel = w.hdata_get("irc_channel")
+   local channel = w.hdata_pointer(h_server, server, "channels")
+   while channel and channel ~= "" do
+      if w.hdata_string(h_channel, channel, "name") == current_channel then
+         local h_nick = w.hdata_get("irc_nick")
+         local nick, valid_nicks = w.hdata_pointer(h_channel, channel, "nicks"), {}
+         while nick and nick ~= "" do
+            local name = w.hdata_string(h_nick, nick, "name")
+            valid_nicks[name] = true
+            w.hook_completion_list_add(
+               completion,
+               ESC..name..ESC,
+               1,
+               w.WEECHAT_LIST_POS_SORT)
+            nick = w.hdata_pointer(h_nick, nick, "next_nick")
          end
-         ptr_group = w.hdata_pointer(h_group, ptr_group, "next_group")
+
+         local h_speaker = w.hdata_get("irc_channel_speaking")
+         local speaker = w.hdata_pointer(h_channel, channel, "last_nick_speaking_time")
+         while speaker and speaker ~= "" do
+            local name = w.hdata_string(h_speaker, speaker, "nick")
+            if valid_nicks[name] then
+               w.hook_completion_list_add(
+                  completion,
+                  ESC..name..ESC,
+                  1,
+                  w.WEECHAT_LIST_POS_BEGINNING)
+            end
+            speaker = w.hdata_pointer(h_speaker, speaker, "prev_nick")
+         end
+
+         if buffer_type == "private" then
+            w.hook_completion_list_add(
+               completion,
+               ESC..current_channel..ESC,
+               1,
+               w.WEECHAT_LIST_POS_BEGINNING)
+         end
+
+         w.hook_completion_list_add(
+            completion,
+            ESC..w.hdata_string(h_server, server, "nick")..ESC,
+            1,
+            w.WEECHAT_LIST_POS_END)
+         break
+      end
+      channel = w.hdata_pointer(h_channel, channel, "next_channel")
+   end
+end
+
+function completion_nicks_cb(_, _, buffer, completion)
+   if w.buffer_get_string(buffer, "plugin") == "irc" then
+      completion_irc_nicks(buffer, completion)
+   else
+      local ptr_group = w.hdata_pointer(w.hdata_get("buffer"), buffer, "nicklist_root")
+      if ptr_group and ptr_group ~= "" then
+         local h_group, h_nick = w.hdata_get("nick_group"), w.hdata_get("nick")
+         ptr_group = w.hdata_pointer(h_group, ptr_group, "children")
+         while ptr_group and ptr_group ~= "" do
+            local ptr_nick = w.hdata_pointer(h_group, ptr_group, "nicks")
+            while ptr_nick and ptr_nick ~= "" do
+               w.hook_completion_list_add(
+                  completion,
+                  ESC..w.hdata_string(h_nick, ptr_nick, "name")..ESC,
+                  1,
+                  w.WEECHAT_LIST_POS_END)
+               ptr_nick = w.hdata_pointer(h_nick, ptr_nick, "next_nick")
+            end
+            ptr_group = w.hdata_pointer(h_group, ptr_group, "next_group")
+         end
       end
    end
 
    return w.WEECHAT_RC_OK
 end
 
-function completion_channels_cb(_, item, buffer, completion)
+function completion_channels_cb(_, _, buffer, completion)
    local buffer_type, current_server, current_channel
    if w.buffer_get_string(buffer, "plugin") == "irc" then
       buffer_type = w.buffer_get_string(buffer, "localvar_type")
@@ -270,20 +335,22 @@ function completion_channels_cb(_, item, buffer, completion)
             local channel_name = w.hdata_string(h_channel, channel, "name")
             if channel_name ~= current_channel then
                if server_name == current_server then
-                  w.list_add(current_server_channels,
-                             ESC..channel_name..ESC,
-                             w.WEECHAT_LIST_POS_SORT, "")
+                  w.list_add(
+                     current_server_channels,
+                     ESC..channel_name..ESC,
+                     w.WEECHAT_LIST_POS_SORT, "")
                else
-                  w.hook_completion_list_add(completion,
-                                             ESC..channel_name..ESC,
-                                             0,
-                                             w.WEECHAT_LIST_POS_SORT)
+                  w.hook_completion_list_add(
+                     completion,
+                     ESC..channel_name..ESC,
+                     0,
+                     w.WEECHAT_LIST_POS_SORT)
                end
             end
-            channel = w.hdata_move(h_channel, channel, 1)
+            channel = w.hdata_pointer(h_channel, channel, "next_channel")
          end
       end
-      server = w.hdata_move(h_server, server, 1)
+      server = w.hdata_pointer(h_server, server, "next_server")
    end
 
    for i = w.list_size(current_server_channels) - 1, 0, -1 do
