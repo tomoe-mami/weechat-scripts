@@ -48,6 +48,7 @@ PHOLD_END = u(0xfffb)
 ESC_RE = "\\x{fffa}"
 PHOLD_START_RE = "\\x{fff9}"
 PHOLD_END_RE = "\\x{fffb}"
+COMPLETER_RE = ":"
 
 function combine(tag, text)
    if not g.diacritic_tags[tag] then
@@ -70,6 +71,10 @@ function title_case(s)
       end,
       nil,
       g.utf8_flag)
+end
+
+function first_cap(s1, s2)
+   return (s1 or "")..utf8.upper(s2)
 end
 
 function replace_patterns(text)
@@ -375,9 +380,14 @@ function completion_channels_cb(_, _, buffer, completion)
 end
 
 function config_cb(_, opt_name, opt_value)
-   local name = opt_name:match("^plugins.var.lua." .. g.script.name .. ".(.+)$")
-   if g.defaults[name] then
-      g.config[name] = opt_value
+   if opt_name == "weechat.completion.nick_completer" then
+      COMPLETER_RE = opt_value:gsub("([^a-zA-Z0-9])", "\\%1")
+      g.replacements[19] = { "^(" .. PHOLD_START_RE .. "\\d+" .. PHOLD_END_RE .. COMPLETER_RE .. "\\s*|[\"])?(\\p{Ll})", first_cap }
+   else
+      opt_name = opt_name:gsub("^plugins%.var%.lua%." .. g.script.name .. "%.", "")
+      if g.defaults[opt_name] then
+         g.config[opt_name] = opt_value
+      end
    end
    return w.WEECHAT_RC_OK
 end
@@ -393,6 +403,10 @@ function init_config()
       end
    end
    w.hook_config("plugins.var.lua." .. g.script.name .. ".*", "config_cb", "")
+
+   local opt_name = "weechat.completion.nick_completer"
+   config_cb(nil, opt_name, w.config_string(w.config_get(opt_name)))
+   w.hook_config(opt_name, "config_cb", "")
 end
 
 function setup()
@@ -447,7 +461,7 @@ g.replacements = {
    { "(?i:\\(tm\\))", u(0x2122) },
    { "(\\d+)\\s*x\\s*(\\d+)", u("%1", 0x00d7, "%2") },
    { "[.?!][\\s\"]+\\p{Ll}", utf8.upper },
-   { "^(?:" .. PHOLD_START_RE .. "\\d+" .. PHOLD_END_RE .. "\\s*|[\"])?\\p{Ll}", utf8.upper },
+   { "^(" .. PHOLD_START_RE .. "\\d+" .. PHOLD_END_RE .. COMPLETER_RE .. "\\s*|[\"])?(\\p{Ll})", first_cap },
    { "(^(?:" .. PHOLD_START_RE .. "\\d+" .. PHOLD_END_RE .. "\\s*)?|[-\\x{2014}\\s(\[\"])'", u("%1", 0x2018) },
    { "'", u(0x2019) },
    { "(^(?:" .. PHOLD_START_RE .. "\\d+" .. PHOLD_END_RE .. "\\s*)?|[-\\x{2014/\\[(\\x{2018}\\s])\"", u("%1", 0x201c) },
