@@ -1,7 +1,7 @@
-local w = weechat
 local pcre = require "rex_pcre"
 local utf8 = require "utf8"
 
+local w = weechat
 local g = {
    script = {
       name = "prettype",
@@ -10,9 +10,7 @@ local g = {
       version = "0.4",
       description = "Prettify text you typed with auto-capitalization and proper unicode symbols"
    },
-   config = {
-      nick_completer = ":"
-   },
+   config = {},
    defaults = {
       buffers = {
          value = "irc.*,!irc.server.*,!*.nickserv,!*.chanserv,!*.memoserv",
@@ -94,22 +92,6 @@ function protect_url(text)
       g.utf8_flag)
 end
 
-function protect_nick_completion(text, buffer)
-   if g.config.nick_completer and g.config.nick_completer ~= "" then
-      text = text:gsub(
-         "^([^%s]+)(%" .. g.config.nick_completer .. "%s*)",
-         function (nick, suffix)
-            local result = nick .. suffix
-            if w.info_get("irc_is_nick", nick) == "1" then
-               return ESC .. result .. ESC
-            else
-               return result
-            end
-         end)
-   end
-   return text
-end
-
 function hash(text)
    local placeholders, index = {}, 0
    text = pcre.gsub(
@@ -152,7 +134,6 @@ function process(text)
    local placeholders
    g.last_fg, g.last_bg = nil, nil
    text = protect_url(text)
-   text = protect_nick_completion(text)
    text, placeholders = hash(text)
    text = replace_patterns(text)
    text = unhash(text, placeholders)
@@ -219,24 +200,122 @@ function command_cb(_, buffer, param)
    return w.WEECHAT_RC_OK
 end
 
-function config_cb(_, opt_name, opt_value)
-   if opt_name == "weechat.completion.nick_completer" then
-      g.config.nick_completer = opt_value
-   else
-      local name = opt_name:match("^plugins.var.lua." .. g.script.name .. ".(.+)$")
-      if g.defaults[name] then
-         g.config[name] = opt_value
+function is_unclosed_escape(s)
+   return (pcre.count(s, ESC_RE, g.utf8_flag) % 2) == 1
+end
+
+function tab_cb(_, buffer, command)
+   local pos = w.buffer_get_integer(buffer, "input_pos")
+   local input = w.buffer_get_string(buffer, "input")
+
+   if w.string_is_command_char(input) == 1 then
+      return w.WEECHAT_RC_OK
+   end
+
+   if pos > 0 then
+      local before_cursor = utf8.sub(input, 1, pos)
+      if is_unclosed_escape(before_cursor) then
+         return w.WEECHAT_RC_OK
+      end
+      local base_word = before_cursor:match("([^%s]+)%s*$")
+      if utf8.sub(base_word, 1, 1) ~= u(ESC) then
+         local length = utf8.len(base_word)
+         w.buffer_set(buffer, "input_pos", pos - length)
+         cmd_insert_escape(buffer)
+         w.buffer_set(buffer, "input_pos", pos + length + 1)
       end
    end
    return w.WEECHAT_RC_OK
 end
 
-function init_config()
-   local opt = w.config_get("weechat.completion.nick_completer")
-   if opt and opt ~= "" then
-      g.config.nick_completer = w.config_string(opt)
+function completion_nicks_cb(_, item, buffer, completion)
+   local ptr_group = w.hdata_pointer(w.hdata_get("buffer"), buffer, "nicklist_root")
+   local ptr_nick
+
+   if ptr_group and ptr_group ~= "" then
+      local h_group, h_nick = w.hdata_get("nick_group"), w.hdata_get("nick")
+      ptr_group = w.hdata_pointer(h_group, ptr_group, "children")
+      while ptr_group and ptr_group ~= "" do
+         ptr_nick = w.hdata_pointer(h_group, ptr_group, "nicks")
+         while ptr_nick and ptr_nick ~= "" do
+            w.hook_completion_list_add(completion,
+                                       ESC..w.hdata_string(h_nick, ptr_nick, "name")..ESC,
+                                       1,
+                                       w.WEECHAT_LIST_POS_END)
+            ptr_nick = w.hdata_pointer(h_nick, ptr_nick, "next_nick")
+         end
+         ptr_group = w.hdata_pointer(h_group, ptr_group, "next_group")
+      end
    end
 
+   return w.WEECHAT_RC_OK
+end
+
+function completion_channels_cb(_, item, buffer, completion)
+   local buffer_type, current_server, current_channel
+   if w.buffer_get_string(buffer, "plugin") == "irc" then
+      buffer_type = w.buffer_get_string(buffer, "localvar_type")
+      current_server = w.buffer_get_string(buffer, "localvar_server")
+      current_channel = w.buffer_get_string(buffer, "localvar_channel")
+   end
+   local h_server, h_channel = w.hdata_get("irc_server"), w.hdata_get("irc_channel")
+   local server = w.hdata_get_list(h_server, "irc_servers")
+   local current_server_channels = w.list_new()
+
+   while server and server ~= "" do
+      if w.hdata_integer(h_server, server, "is_connected") == 1 then
+         local server_name = w.hdata_string(h_server, server, "name")
+         local channel = w.hdata_pointer(h_server, server, "channels")
+         while channel and channel ~= "" do
+            local channel_name = w.hdata_string(h_channel, channel, "name")
+            if channel_name ~= current_channel then
+               if server_name == current_server then
+                  w.list_add(current_server_channels,
+                             ESC..channel_name..ESC,
+                             w.WEECHAT_LIST_POS_SORT, "")
+               else
+                  w.hook_completion_list_add(completion,
+                                             ESC..channel_name..ESC,
+                                             0,
+                                             w.WEECHAT_LIST_POS_SORT)
+               end
+            end
+            channel = w.hdata_move(h_channel, channel, 1)
+         end
+      end
+      server = w.hdata_move(h_server, server, 1)
+   end
+
+   for i = w.list_size(current_server_channels) - 1, 0, -1 do
+      w.hook_completion_list_add(
+         completion,
+         w.list_string(w.list_get(current_server_channels, i)),
+         0,
+         w.WEECHAT_LIST_POS_BEGINNING)
+
+   end
+   w.list_free(current_server_channels)
+
+   if buffer_type == "channel" and current_channel then
+      w.hook_completion_list_add(
+         completion,
+         ESC..current_channel..ESC,
+         0,
+         w.WEECHAT_LIST_POS_BEGINNING)
+   end
+
+   return w.WEECHAT_RC_OK
+end
+
+function config_cb(_, opt_name, opt_value)
+   local name = opt_name:match("^plugins.var.lua." .. g.script.name .. ".(.+)$")
+   if g.defaults[name] then
+      g.config[name] = opt_value
+   end
+   return w.WEECHAT_RC_OK
+end
+
+function init_config()
    for name, info in pairs(g.defaults) do
       if w.config_is_set_plugin(name) ~= 1 then
          w.config_set_plugin(name, info.value)
@@ -246,7 +325,6 @@ function init_config()
          g.config[name] = w.config_get_plugin(name)
       end
    end
-   w.hook_config("weechat.completion.nick_completer", "config_cb", "")
    w.hook_config("plugins.var.lua." .. g.script.name .. ".*", "config_cb", "")
 end
 
@@ -265,6 +343,9 @@ function setup()
 
    w.hook_command_run("/input return", "input_return_cb", "")
    w.hook_modifier("9000|input_text_display_with_cursor", "input_text_display_cb", "")
+   w.hook_completion("prettype_channels", "Channels on all IRC servers", "completion_channels_cb", "")
+   w.hook_completion("prettype_nicks", "Nicks in nicklist", "completion_nicks_cb", "")
+   w.hook_command_run("/input complete*", "tab_cb", "")
    w.hook_command(
       g.script.name,
       "Control " .. g.script.name .. " script.",
