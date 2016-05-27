@@ -233,11 +233,7 @@ function tab_cb(_, buffer, command)
    return w.WEECHAT_RC_OK
 end
 
-function completion_irc_nicks(buffer, completion)
-   local buffer_type = w.buffer_get_string(buffer, "localvar_type")
-   local current_server = w.buffer_get_string(buffer, "localvar_server")
-   local current_channel = w.buffer_get_string(buffer, "localvar_channel")
-
+function completion_irc_nicks(current_server, current_channel, completion)
    local h_server = w.hdata_get("irc_server")
    local servers = w.hdata_get_list(h_server, "irc_servers")
    local server = w.hdata_search(h_server, servers, "${irc_server.name} == "..current_server, 1)
@@ -262,26 +258,18 @@ function completion_irc_nicks(buffer, completion)
             nick = w.hdata_pointer(h_nick, nick, "next_nick")
          end
 
-         local h_speaker = w.hdata_get("irc_channel_speaking")
-         local speaker = w.hdata_pointer(h_channel, channel, "last_nick_speaking_time")
-         while speaker and speaker ~= "" do
-            local name = w.hdata_string(h_speaker, speaker, "nick")
-            if valid_nicks[name] then
-               w.hook_completion_list_add(
-                  completion,
-                  ESC..name..ESC,
-                  1,
-                  w.WEECHAT_LIST_POS_BEGINNING)
+         local speakers = w.hdata_pointer(h_channel, channel, "nicks_speaking")
+         if speakers and speakers ~= "" then
+            for i = 0, w.list_size(speakers) - 1 do
+               local name = w.list_string(w.list_get(speakers, i))
+               if valid_nicks[name] then
+                  w.hook_completion_list_add(
+                     completion,
+                     ESC..name..ESC,
+                     1,
+                     w.WEECHAT_LIST_POS_BEGINNING)
+               end
             end
-            speaker = w.hdata_pointer(h_speaker, speaker, "prev_nick")
-         end
-
-         if buffer_type == "private" then
-            w.hook_completion_list_add(
-               completion,
-               ESC..current_channel..ESC,
-               1,
-               w.WEECHAT_LIST_POS_BEGINNING)
          end
 
          w.hook_completion_list_add(
@@ -297,8 +285,26 @@ end
 
 function completion_nicks_cb(_, _, buffer, completion)
    if w.buffer_get_string(buffer, "plugin") == "irc" then
-      completion_irc_nicks(buffer, completion)
-   else
+      local buffer_type = w.buffer_get_string(buffer, "localvar_type")
+      local current_channel = w.buffer_get_string(buffer, "localvar_channel")
+      if buffer_type == "private" then
+         w.hook_completion_list_add(
+            completion,
+            ESC..current_channel..ESC,
+            1,
+            w.WEECHAT_LIST_POS_BEGINNING)
+         w.hook_completion_list_add(
+            completion,
+            ESC..w.buffer_get_string(buffer, "localvar_nick")..ESC,
+            1,
+            w.WEECHAT_LIST_POS_END)
+      elseif buffer_type == "channel" then
+         completion_irc_nicks(
+            w.buffer_get_string(buffer, "localvar_server"),
+            current_channel,
+            completion)
+      end
+   elseif w.buffer_get_integer(buffer, "nicklist") == 1 then
       local ptr_group = w.hdata_pointer(w.hdata_get("buffer"), buffer, "nicklist_root")
       if ptr_group and ptr_group ~= "" then
          local h_group, h_nick = w.hdata_get("nick_group"), w.hdata_get("nick")
