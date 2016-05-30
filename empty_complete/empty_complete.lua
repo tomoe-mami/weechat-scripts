@@ -89,7 +89,7 @@ function complete_cb(_, ptr_buf, cmd)
       end
    elseif input_length == 0 then
       buffer.index = nil
-   elseif buffer.last_nick and input_text ~= buffer.last_nick then
+   elseif input_text ~= buffer.last_nick then
       g.buffers[ptr_buf] = nil
       return w.WEECHAT_RC_OK
    end
