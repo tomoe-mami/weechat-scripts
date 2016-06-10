@@ -14,7 +14,7 @@ it will be converted to this:
 ### Dependencies
 
 This script requires **utf8** and **lrexlib-pcre** modules. You can get them
-using [luarocks](https://luarocks.org/):
+using [luarocks][1]:
 
 ```
 luarocks install utf8
@@ -29,14 +29,8 @@ escape` (as usual, bind it to a key to make it useful). The command has to be
 called twice, one at the beginning of portion of text you want to protect and
 another one at the end of it.
 
-Portion of text that looks like URL will be escaped automatically.
-
-Automatic nicks and channels completion can be done if you use the alternative
-completion items provided by this script: `prettype_nicks` (for nicks) and
-`prettype_channels` (for channels). For example:
-
-    /set weechat.completion.default_template "%(prettype_nicks)|%(prettype_channels)"
-
+URLs will be escaped automatically. If you want to auto-escape nick completion,
+you can combine this script with [nick_complete_wrapper.lua][2].
 
 ### Original Text
 
@@ -73,3 +67,11 @@ allowed. To exclude certain buffers, you can prefix it with `!`. Default is
 
 Color that will be used to mark escaped text. Default is `magenta`.
 
+##### plugins.var.lua.prettype.ncw_compat
+
+Compatibility with script [nick_complete_wrapper.lua][2]. If enabled, prettype
+will set local variable `ncw_prefix` and `ncw_suffix` to the escape character.
+
+
+[1]: https://luarocks.org
+[2]: nick_complete_wrapper
