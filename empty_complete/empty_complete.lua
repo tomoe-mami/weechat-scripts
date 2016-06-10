@@ -1,8 +1,9 @@
 w, script_name = weechat, "empty_complete"
 g = {
-   config = {
-      nick_completer = ":",
-      nick_space = " "
+   config = {},
+   defaults = {
+      ignore_offline_nicks = { "on", "Ignore nicks who already left the channel" },
+      ncw_compat = { "on", "Enable compatibility with script nick_complete_wrapper.lua" }
    },
    buffers = {}
 }
@@ -17,23 +18,34 @@ function main()
       "", "")
 
    if reg_ok then
-      g.config.nick_completer = w.config_string(w.config_get("weechat.completion.nick_completer"))
-      local add_space = w.config_boolean(w.config_get("weechat.completion.nick_add_space"))
-      g.config.nick_space = add_space and " " or ""
-
-      w.hook_config("weechat.completion.nick_completer", "config_cb", "")
-      w.hook_config("weechat.completion.nick_add_space", "config_cb", "")
+      init_config()
       w.hook_command_run("/input complete*", "complete_cb", "")
       w.hook_modifier("history_add", "history_add_cb", "")
       w.hook_signal("buffer_closed", "buffer_closed_cb", "")
    end
 end
 
+function init_config()
+   g.config.nick_completer = w.config_get("weechat.completion.nick_completer")
+   g.config.nick_space = w.config_get("weechat.completion.nick_add_space")
+
+   for name, info in pairs(g.defaults) do
+      if w.config_is_set_plugin(name) == 1 then
+         config_cb(nil, name, w.config_get_plugin(name))
+      else
+         w.config_set_plugin(name, info[1])
+         w.config_set_desc_plugin(name, info[2])
+         config_cb(nil, name, info[1])
+      end
+   end
+   w.hook_config("plugins.var.lua."..script_name..".*", "config_cb", "")
+end
+
 function config_cb(_, opt_name, opt_value)
-   if opt_name == "weechat.completion.nick_completer" then
-      g.config.nick_completer = opt_value
-   elseif opt_name == "weechat.completion.nick_add_space" then
-      g.config.nick_space = w.config_string_to_boolean(opt_value) == 1 and " " or ""
+   opt_name = opt_name:gsub("^plugins%.var%.lua%."..script_name.."%.", "")
+   if g.defaults[opt_name] then
+      opt_value = w.config_string_to_boolean(opt_value) == 1
+      g.config[opt_name] = opt_value
    end
    return w.WEECHAT_RC_OK
 end
@@ -87,6 +99,7 @@ function complete_cb(_, ptr_buf, cmd)
       if not buffer.speakers or buffer.speakers == "" then
          return w.WEECHAT_RC_OK
       end
+      g.buffers[ptr_buf] = buffer
    elseif input_length == 0 then
       buffer.index = nil
    elseif input_text ~= buffer.last_nick then
@@ -94,25 +107,56 @@ function complete_cb(_, ptr_buf, cmd)
       return w.WEECHAT_RC_OK
    end
 
-   local total_speakers = w.list_size(buffer.speakers)
-   if total_speakers == 0 then
-      return w.WEECHAT_RC_OK
+   local nick = get_speaker(ptr_buf, buffer, dir)
+   if nick and nick ~= "" then
+      buffer.last_nick = nick..w.config_string(g.config.nick_completer)
+      if g.config.ncw_compat then
+         buffer.last_nick = w.buffer_get_string(ptr_buf, "localvar_ncw_prefix")..
+                            buffer.last_nick..
+                            w.buffer_get_string(ptr_buf, "localvar_ncw_suffix")
+      end
+      if w.config_boolean(g.config.nick_space) == 1 then
+         buffer.last_nick = buffer.last_nick.." "
+      end
+      w.buffer_set(ptr_buf, "input", buffer.last_nick)
+      w.command(ptr_buf, "/input move_end_of_line")
    end
-
-   if not buffer.index then
-      buffer.index = dir == "next" and (total_speakers - 1) or 0
-   else
-      buffer.index = (buffer.index + (dir == "next" and -1 or 1)) % total_speakers
-   end
-   buffer.last_nick = w.list_string(w.list_get(buffer.speakers, buffer.index))..
-                      g.config.nick_completer..
-                      g.config.nick_space
-
-   w.buffer_set(ptr_buf, "input", buffer.last_nick)
-   w.command(ptr_buf, "/input move_end_of_line")
-   g.buffers[ptr_buf] = buffer
-
    return w.WEECHAT_RC_OK
+end
+
+function get_speaker(ptr_buf, buffer, dir)
+   local total = w.list_size(buffer.speakers)
+   if total == 0 then
+      return
+   end
+
+   local last = total - 1
+   if not buffer.index then
+      buffer.index = dir == "next" and last or 0
+   else
+      buffer.index = (buffer.index + (dir == "next" and -1 or 1)) % total
+   end
+
+   if not g.config.ignore_offline_nicks then
+      return w.list_string(w.list_get(buffer.speakers, buffer.index))
+   else
+      local p
+      if dir == "next" then
+         p = {{ buffer.index, 0, -1 }, { 0, buffer.index - 1, 1 }}
+      else
+         p = {{ buffer.index, last , 1 }, { last, buffer.index + 1, -1 }}
+      end
+
+      for _, a in ipairs(p) do
+         for i = a[1], a[2], a[3] do
+            local val = w.list_string(w.list_get(buffer.speakers, i))
+            if w.nicklist_search_nick(ptr_buf, "", val) ~= "" then
+               buffer.index = i
+               return val
+            end
+         end
+      end
+   end
 end
 
 function history_add_cb(_, _, ptr_buf, text)
