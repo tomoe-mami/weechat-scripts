@@ -22,6 +22,15 @@ function get_completion(ptr_buffer)
       t.word_found = w.hdata_string(h_comp, ptr_comp, "word_found")
       t.is_nick = w.hdata_integer(h_comp, ptr_comp, "word_found_is_nick") == 1
       t.is_command = w.hdata_string(h_comp, ptr_comp, "base_command") ~= ""
+      if not t.is_command and t.word_found == "" then
+         local last_nick = w.buffer_get_string(ptr_buffer, "localvar_ncw_last_nick")
+         if last_nick ~= "" then
+            t.word_found, t.is_nick = last_nick, true
+            t.start_pos = tonumber(w.buffer_get_string(ptr_buffer, "localvar_ncw_last_pos")) or 0
+            w.buffer_set(ptr_buffer, "localvar_del_ncw_last_nick", "")
+            w.buffer_set(ptr_buffer, "localvar_del_ncw_last_pos", "")
+         end
+      end
       return t
    end
 end
@@ -68,6 +77,8 @@ function cleanup_previous_completion(ptr_buffer)
             w.buffer_set(ptr_buffer, "input_pos", current_pos - ps.prefix_len)
          end
          w.buffer_set(ptr_buffer, "completion_freeze", "0")
+         w.buffer_set(ptr_buffer, "localvar_set_ncw_last_nick", comp.word_found)
+         w.buffer_set(ptr_buffer, "localvar_set_ncw_last_pos", comp.start_pos)
       end
    end
 end
