@@ -1,4 +1,4 @@
-w, table.unpack, script_name = weechat, table.unpack or unpack, "active_nicks"
+w, script_name = weechat, "active_nicks"
 
 g = {
    config = {},
@@ -26,11 +26,44 @@ g = {
          value = "nick_*+log1",
          description = [[Only count activity from messages with these tags.
          See https://weechat.org/doc/api#_hook_print for syntax of tags]]
+      },
+      groups = {
+         type = "string",
+         value = "*",
+         description = [[Comma separated list of nick groups that will be
+         modified by this script. Wildcard "*" is allowed, a name beginning with
+         "!" is excluded]]
       }
    },
    hooks = {},
    buffers = {}
 }
+
+function string:match_list(pattern, is_group)
+   if is_group then
+      local pos = self:find("|", 1, true)
+      self = pos and self:sub(pos + 1) or self
+      if not self or self == "" then
+         return false
+      end
+   end
+   local result = false
+   for mask in pattern:gmatch("([^,]+)") do
+      local negate = false
+      if mask:sub(1, 1) == "!" then
+         negate, mask = true, mask:sub(2)
+      end
+      local match = w.string_match(self, mask, 0) == 1
+      if match then
+         if negate then
+            result = false
+            break
+         end
+         result = true
+      end
+   end
+   return result
+end
 
 function main()
    local reg_ok = w.register(
@@ -81,7 +114,9 @@ function iter_nicklist(buffer)
             t = w.infolist_string(list, "type")
          end
          local nick_name = w.infolist_string(list, "name")
-         return nick_name, w.nicklist_search_nick(buffer, "", nick_name)
+         return nick_name,
+                w.nicklist_search_nick(buffer, "", nick_name),
+                w.infolist_string(list, "group_name")
       end
    end
 end
@@ -128,6 +163,7 @@ function config_cb(_, opt_name, opt_value)
    local prefix = "plugins.var.lua."..script_name.."."
    local name = opt_name:sub(#prefix + 1)
    if name and g.defaults[name] then
+      local orig_value = g.config[name]
       g.config[name] = get_valid_option_value(opt_value, g.defaults[name])
       if name == "delay" then
          hook_timer()
@@ -135,6 +171,8 @@ function config_cb(_, opt_name, opt_value)
          hook_print()
       elseif name == "conditions" then
          recheck_buffer_conditions()
+      elseif name == "groups" then
+         recheck_groups(orig_value, g.config[name])
       end
    end
    return w.WEECHAT_RC_OK
@@ -164,7 +202,25 @@ function recheck_buffer_conditions()
          v = false
       end
       if v ~= nil then
-         set_all_nicks_visibility(buf_ptr, v)
+         set_all_nicks_visibility(buf_ptr, v, true)
+      end
+   end
+end
+
+function recheck_groups(old_mask, new_mask)
+   if old_mask == new_mask then
+      return
+   end
+   for buf_ptr, buf in pairs(g.buffers) do
+      for nick_name, nick_ptr, nick_group in iter_nicklist(buf_ptr) do
+         local old_match = nick_group:match_list(old_mask, true)
+         local new_match = nick_group:match_list(new_mask, true)
+         if not old_match and new_match then
+            w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "0")
+         elseif old_match and not new_match then
+            buf.nicklist[nick_name] = nil
+            w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "1")
+         end
       end
    end
 end
@@ -176,10 +232,29 @@ function add_buffer(buf_ptr)
    return g.buffers[buf_ptr]
 end
 
-function set_all_nicks_visibility(buf_ptr, flag)
+function nick_group_match(buffer, nick_ptr, group_ptr)
+   if not group_ptr or group_ptr == "" then
+      group_ptr = w.nicklist_nick_get_pointer(buffer, nick_ptr, "group")
+      if not group_ptr or group_ptr == "" then
+         return false
+      end
+   end
+   local group_name = w.nicklist_group_get_string(buffer, group_ptr, "name")
+   if not group_name or group_name == "" then
+      return false
+   end
+   return group_name:match_list(g.config.groups, true)
+end
+
+function set_all_nicks_visibility(buf_ptr, flag, is_init)
    flag = flag and "1" or "0"
-   for nick_name, nick_ptr in iter_nicklist(buf_ptr) do
-      w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", flag)
+   local mask = g.config.groups
+   for nick_name, nick_ptr, nick_group in iter_nicklist(buf_ptr) do
+      if nick_group:match_list(mask, true) then
+         w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", flag)
+      elseif is_init then
+         w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "1")
+      end
    end
 end
 
@@ -190,7 +265,7 @@ function hide_all_nicks(flag)
          if flag then
             add_buffer(buf_ptr)
          end
-         set_all_nicks_visibility(buf_ptr, not flag)
+         set_all_nicks_visibility(buf_ptr, not flag, true)
       end
    end
 end
@@ -199,7 +274,7 @@ function show_nick(buffer, nick_name, timestamp)
    local buf = add_buffer(buffer)
    if not buf.hold then
       local ptr = w.nicklist_search_nick(buffer, "", nick_name)
-      if ptr ~= "" then
+      if ptr ~= "" and nick_group_match(buffer, ptr) then
          buf.nicklist[nick_name] = timestamp
          if w.nicklist_nick_get_integer(buffer, ptr, "visible") == 0 then
             w.nicklist_nick_set(buffer, ptr, "visible", "1")
@@ -225,7 +300,7 @@ end
 function nick_added_cb(_, _, param)
    if check_buffer_conditions(param.buffer) then
       local buf = add_buffer(param.buffer)
-      if not buf.hold then
+      if not buf.hold and nick_group_match(param.buffer, param.nick, param.parent_group) then
          local nick_name = w.nicklist_nick_get_string(param.buffer, param.nick, "name")
          if not buf.nicklist[nick_name] then
             w.nicklist_nick_set(param.buffer, param.nick, "visible", "0")
@@ -259,7 +334,7 @@ function names_received_cb(_, _, server, msg)
             local buf = add_buffer(buf_ptr)
             if not buf.hold then
                buf.hold = true
-               set_all_nicks_visibility(buf_ptr, true)
+               set_all_nicks_visibility(buf_ptr, true, true)
             end
          end
       end
@@ -277,8 +352,9 @@ function names_end_cb(_, signal, msg)
             return w.WEECHAT_RC_OK
          end
          local buf = g.buffers[buf_ptr]
-         for nick_name, nick_ptr in iter_nicklist(buf_ptr) do
-            if not buf.nicklist[nick_name] then
+         local mask = g.config.groups
+         for nick_name, nick_ptr, group_name in iter_nicklist(buf_ptr) do
+            if not buf.nicklist[nick_name] and group_name:match_list(mask, true) then
                w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "0")
             end
          end
