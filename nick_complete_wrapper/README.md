@@ -3,6 +3,8 @@ nick_complete_wrapper
 
 Wraps nick completion with custom prefix and/or suffix.
 
+![demo][]
+
 ### Settings
 
 This script uses buffer local variable `ncw_prefix` and `ncw_suffix` for setting
@@ -13,7 +15,7 @@ custom prefix/suffix. Example:
 
 These variables only stay as long as the buffer isn't closed. If you want to
 keep the values, you can use the `/autosetbuffer` command from script
-[buffer_autoset.py][1]. For example:
+[buffer_autoset.py][autoset]. For example:
 
     /autosetbuffer add irc.bitlbee.#twitter_* localvar_set_ncw_prefix @
 
@@ -22,4 +24,5 @@ keep the values, you can use the `/autosetbuffer` command from script
 1. Compatibility with empty_complete.lua and prettype.lua
 2. Better name
 
-[1]: https://github.com/weechat/scripts/blob/master/python/buffer_autoset.py
+[autoset]: https://github.com/weechat/scripts/blob/master/python/buffer_autoset.py
+[demo]: https://i.imgur.com/Dhzj9DP.gif
