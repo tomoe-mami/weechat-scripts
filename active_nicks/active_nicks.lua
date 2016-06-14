@@ -455,12 +455,13 @@ function cmd_toggle(buf_ptr)
    local buf = g.buffers[buf_ptr]
    if buf then
       buf.hold = not buf.hold
-      for nick_name, nick_ptr in iter_nicklist(buf_ptr) do
+      local mask = g.config.groups
+      for nick_name, nick_ptr, nick_group in iter_nicklist(buf_ptr) do
          local flag = "1"
          if not buf.hold then
             if buf.nicklist[nick_name] then
                buf.nicklist[nick_name] = os.time()
-            else
+            elseif nick_group:match_list(mask, true) then
                flag = "0"
             end
          end
