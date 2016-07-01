@@ -5,6 +5,9 @@ Wraps nick completion with custom prefix and/or suffix.
 
 ![demo][]
 
+Lua [utf8][] module is an optional dependency. The script will fallback to
+Weechat's string function if the module doesn't exist.
+
 ### Settings
 
 This script uses buffer local variable `ncw_prefix` and `ncw_suffix` for setting
@@ -25,3 +28,4 @@ keep the values, you can use the `/autosetbuffer` command from script
 
 [autoset]: https://github.com/weechat/scripts/blob/master/python/buffer_autoset.py
 [demo]: https://i.imgur.com/Dhzj9DP.gif
+[utf8]: https://luarocks.org/modules/dannote/utf8

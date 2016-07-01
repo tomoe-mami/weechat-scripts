@@ -7,8 +7,31 @@ function main()
       "Wraps nick completion with prefix and/or suffix",
       "", "")
    if reg then
+      check_utf8_support()
       config.nick_add_space = w.config_get("weechat.completion.nick_add_space")
       w.hook_command_run("9000|/input complete_*", "complete_cb", "")
+   end
+end
+
+function check_utf8_support()
+   if utf8 and type(utf8.len) == "function" then
+      -- lua 5.3 with builtin utf8 support
+      string_length = utf8.len
+   else
+      -- lua < 5.3 with utf8 module
+      for _, searcher in ipairs(package.searchers or package.loaders) do
+         local loader = searcher("utf8")
+         if type(loader) == "function" then
+            package.preload.utf8 = loader
+            utf8 = require "utf8"
+            if type(utf8.len) == "function" then
+               string_length = utf8.len
+            end
+         end
+      end
+   end
+   if not string_length then
+      string_length = w.strlen_screen
    end
 end
 
@@ -35,13 +58,10 @@ function get_completion(ptr_buffer)
 end
 
 function get_prefix_suffix(ptr_buffer)
-   local t = {
+   return {
       prefix = w.buffer_get_string(ptr_buffer, "localvar_ncw_prefix"),
       suffix = w.buffer_get_string(ptr_buffer, "localvar_ncw_suffix")
    }
-   t.prefix_len = w.strlen_screen(t.prefix)
-   t.suffix_len = w.strlen_screen(t.suffix)
-   return t
 end
 
 function cleanup_previous_completion(ptr_buffer)
@@ -56,10 +76,10 @@ function cleanup_previous_completion(ptr_buffer)
       local space = w.config_boolean(config.nick_add_space) and " " or ""
       local str_nick = ps.prefix..comp.word_found..ps.suffix..space
       local str_before = input:sub(1, comp.start_pos)
-      if w.strlen_screen(str_before..str_nick) == current_pos then
+      if string_length(str_before..str_nick) == current_pos then
          w.buffer_set(ptr_buffer, "completion_freeze", "1")
          w.buffer_set(ptr_buffer, "input", str_before..comp.word_found..input:sub(comp.start_pos + #str_nick))
-         w.buffer_set(ptr_buffer, "input_pos", w.strlen_screen(str_before..comp.word_found..space))
+         w.buffer_set(ptr_buffer, "input_pos", string_length(str_before..comp.word_found..space))
          w.buffer_set(ptr_buffer, "completion_freeze", "0")
          w.buffer_set(ptr_buffer, "localvar_set_ncw_last_nick", comp.word_found)
          w.buffer_set(ptr_buffer, "localvar_set_ncw_last_pos", comp.start_pos)
@@ -102,7 +122,7 @@ function input_changed_cb(ptr_buffer)
       local str_after = input:sub(comp.start_pos + #comp.word_found + add_space)
       w.buffer_set(ptr_buffer, "completion_freeze", "1")
       w.buffer_set(ptr_buffer, "input", str_before..str_nick..str_after)
-      w.buffer_set(ptr_buffer, "input_pos", w.strlen_screen(str_before..str_nick) + add_space)
+      w.buffer_set(ptr_buffer, "input_pos", string_length(str_before..str_nick) + add_space)
       w.buffer_set(ptr_buffer, "completion_freeze", "0")
    end
 
