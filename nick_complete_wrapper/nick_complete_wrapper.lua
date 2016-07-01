@@ -2,15 +2,14 @@ w, script_name = weechat, "nick_complete_wrapper"
 config, hooks = {}, {}
 
 function main()
-   assert(w.register(
-      script_name, "singalaut", "0.1", "WTFPL",
+   local reg = w.register(
+      script_name, "singalaut <https://github.com/tomoe-mami>", "0.1", "WTFPL",
       "Wraps nick completion with prefix and/or suffix",
-      "", ""))
-
-   for _, name in ipairs({"nick_add_space", "nick_completer"}) do
-      config[name] = w.config_get("weechat.completion."..name)
+      "", "")
+   if reg then
+      config.nick_add_space = w.config_get("weechat.completion.nick_add_space")
+      w.hook_command_run("9000|/input complete_*", "complete_cb", "")
    end
-   w.hook_command_run("9000|/input complete_*", "complete_cb", "")
 end
 
 function get_completion(ptr_buffer)
@@ -53,32 +52,20 @@ function cleanup_previous_completion(ptr_buffer)
    local comp = get_completion(ptr_buffer)
    if comp and comp.is_nick and not comp.is_command then
       local current_pos = w.buffer_get_integer(ptr_buffer, "input_pos")
-      local add_space = w.config_boolean(config.nick_add_space)
-      local word_length = ps.prefix_len +
-                          w.strlen_screen(comp.word_found) +
-                          ps.suffix_len +
-                          add_space
-
-      if comp.start_pos + word_length == current_pos then
+      local input = w.buffer_get_string(ptr_buffer, "input")
+      local space = w.config_boolean(config.nick_add_space) and " " or ""
+      local str_nick = ps.prefix..comp.word_found..ps.suffix..space
+      local str_before = input:sub(1, comp.start_pos)
+      if w.strlen_screen(str_before..str_nick) == current_pos then
          w.buffer_set(ptr_buffer, "completion_freeze", "1")
-         if ps.suffix_len > 0 then
-            if add_space then
-               w.command(ptr_buffer, "/input move_previous_char")
-            end
-            for i = 1, ps.suffix_len do
-               w.command(ptr_buffer, "/input delete_previous_char")
-            end
-         end
-         if ps.prefix_len > 0 then
-            w.buffer_set(ptr_buffer, "input_pos", comp.start_pos)
-            for i = 1, ps.prefix_len do
-               w.command(ptr_buffer, "/input delete_next_char")
-            end
-            w.buffer_set(ptr_buffer, "input_pos", current_pos - ps.prefix_len)
-         end
+         w.buffer_set(ptr_buffer, "input", str_before..comp.word_found..input:sub(comp.start_pos + #str_nick))
+         w.buffer_set(ptr_buffer, "input_pos", w.strlen_screen(str_before..comp.word_found..space))
          w.buffer_set(ptr_buffer, "completion_freeze", "0")
          w.buffer_set(ptr_buffer, "localvar_set_ncw_last_nick", comp.word_found)
          w.buffer_set(ptr_buffer, "localvar_set_ncw_last_pos", comp.start_pos)
+      else
+         w.buffer_set(ptr_buffer, "localvar_del_ncw_last_nick", "")
+         w.buffer_set(ptr_buffer, "localvar_del_ncw_last_pos", "")
       end
    end
 end
@@ -105,20 +92,19 @@ function input_changed_cb(ptr_buffer)
    if not comp or comp.is_command or not comp.is_nick then
       return w.WEECHAT_RC_OK
    end
-   local current_pos = w.buffer_get_integer(ptr_buffer, "input_pos")
-   w.buffer_set(ptr_buffer, "completion_freeze", "1")
-   if ps.suffix_len > 0 then
-      if w.config_boolean(config.nick_add_space) == 1 then
-         w.command(ptr_buffer, "/input move_previous_char")
-      end
-      w.command(ptr_buffer, "/input insert "..ps.suffix:gsub("\\", "\\\\"))
+
+   local str_nick = ps.prefix..comp.word_found..ps.suffix
+   if str_nick ~= comp.word_found then
+      local input = w.buffer_get_string(ptr_buffer, "input")
+      local current_pos = w.buffer_get_integer(ptr_buffer, "input_pos")
+      local str_before = input:sub(1, comp.start_pos)
+      local add_space = w.config_boolean(config.nick_add_space) and 1 or 0
+      local str_after = input:sub(comp.start_pos + #comp.word_found + add_space)
+      w.buffer_set(ptr_buffer, "completion_freeze", "1")
+      w.buffer_set(ptr_buffer, "input", str_before..str_nick..str_after)
+      w.buffer_set(ptr_buffer, "input_pos", w.strlen_screen(str_before..str_nick) + add_space)
+      w.buffer_set(ptr_buffer, "completion_freeze", "0")
    end
-   if ps.prefix_len > 0 then
-      w.buffer_set(ptr_buffer, "input_pos", comp.start_pos)
-      w.command(ptr_buffer, "/input insert "..ps.prefix:gsub("\\", "\\\\"))
-      w.buffer_set(ptr_buffer, "input_pos", current_pos + ps.prefix_len + ps.suffix_len)
-   end
-   w.buffer_set(ptr_buffer, "completion_freeze", "0")
 
    return w.WEECHAT_RC_OK
 end

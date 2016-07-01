@@ -21,8 +21,7 @@ keep the values, you can use the `/autosetbuffer` command from script
 
 ### TODO
 
-1. Compatibility with empty_complete.lua and prettype.lua
-2. Better name
+1. Better name
 
 [autoset]: https://github.com/weechat/scripts/blob/master/python/buffer_autoset.py
 [demo]: https://i.imgur.com/Dhzj9DP.gif
