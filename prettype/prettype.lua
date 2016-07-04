@@ -315,7 +315,7 @@ g.replacements = {
    { "^(?:" .. PHOLD_START_RE .. "\\d+" .. PHOLD_END_RE .. "\\s*|[\"])?\\p{Ll}", utf8.upper },
    { "(^(?:" .. PHOLD_START_RE .. "\\d+" .. PHOLD_END_RE .. "\\s*)?|[-\\x{2014}\\s(\[\"])'", u("%1", 0x2018) },
    { "'", u(0x2019) },
-   { "(^(?:" .. PHOLD_START_RE .. "\\d+" .. PHOLD_END_RE .. "\\s*)?|[-\\x{2014/\\[(\\x{2018}\\s])\"", u("%1", 0x201c) },
+   { "(^(?:" .. PHOLD_START_RE .. "\\d+" .. PHOLD_END_RE .. "\\s*)?|[-\\x{2014}\\[(\\x{2018}\\s])\"", u("%1", 0x201c) },
    { "\"", u(0x201d) },
    { "\\bi\\b", utf8.upper },
    { "\\b(?i:dr|mr|mrs|prof)\\.", title_case },
