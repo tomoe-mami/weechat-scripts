@@ -87,36 +87,70 @@ function main()
    end
 end
 
-function iter_buffers(name)
-   local list = w.infolist_get("buffer", "", name or "")
-   if list ~= "" then
-      return function ()
-         if w.infolist_next(list) ~= 1 then
-            w.infolist_free(list)
-         else
-            return w.infolist_string(list, "full_name"),
-                   w.infolist_pointer(list, "pointer")
-         end
+function iter_buffers()
+   local h_buffer = w.hdata_get("buffer")
+   local buffer = w.hdata_get_list(h_buffer, "gui_buffers")
+   return function ()
+      if buffer and buffer ~= "" then
+         local ptr_buffer = buffer
+         buffer = w.hdata_pointer(h_buffer, ptr_buffer, "next_buffer")
+         return ptr_buffer, h_buffer
       end
    end
 end
 
 function iter_nicklist(buffer)
-   local list = w.infolist_get("nicklist", buffer, "")
-   if list ~= "" then
-      return function ()
-         local t
-         while t ~= "nick" do
-            if w.infolist_next(list) ~= 1 then
-               w.infolist_free(list)
-               return
-            end
-            t = w.infolist_string(list, "type")
+   local h_buffer = w.hdata_get("buffer")
+   local h_nick, h_group = w.hdata_get("nick"), w.hdata_get("nick_group")
+   local root = w.hdata_pointer(h_buffer, buffer, "nicklist_root")
+   local current_item, h_current = w.hdata_pointer(h_group, root, "children"), h_group
+   local next_item, h_next = ""
+
+   local get_parent_next_sibling = function (ptr, is_nick)
+      while ptr ~= "" and ptr ~= root do
+         if is_nick then
+            ptr = w.hdata_pointer(h_nick, ptr, "group")
+            is_nick = false
+         else
+            ptr = w.hdata_pointer(h_group, ptr, "parent")
          end
-         local nick_name = w.infolist_string(list, "name")
-         return nick_name,
-                w.nicklist_search_nick(buffer, "", nick_name),
-                w.infolist_string(list, "group_name")
+         local next_group = w.hdata_pointer(h_group, ptr, "next_group")
+         if next_group ~= "" then
+            ptr = next_group
+            break
+         end
+      end
+      return ptr
+   end
+
+   return function ()
+      if current_item ~= "" and current_item ~= root then
+         local ret_item, h_ret = current_item, h_current
+         if h_current == h_group then
+            next_item = w.hdata_pointer(h_group, current_item, "children")
+            if next_item ~= "" then
+               h_next = h_group
+            else
+               next_item = w.hdata_pointer(h_group, current_item, "nicks")
+               if next_item ~= "" then
+                  h_next = h_nick
+               else
+                  next_item = w.hdata_pointer(h_group, current_item, "next_group")
+                  h_next = h_group
+                  if next_item == "" then
+                     next_item = get_parent_next_sibling(current_item)
+                  end
+               end
+            end
+         elseif h_current == h_nick then
+            next_item = w.hdata_pointer(h_nick, current_item, "next_nick")
+            if next_item == "" then
+               next_item = get_parent_next_sibling(current_item, true)
+               h_next = h_group
+            end
+         end
+         current_item, h_current = next_item, h_next
+         return ret_item, h_ret, (h_ret == h_nick and "nick" or "group")
       end
    end
 end
@@ -191,7 +225,7 @@ function check_buffer_conditions(buffer)
 end
 
 function recheck_buffer_conditions()
-   for buf_name, buf_ptr in iter_buffers() do
+   for buf_ptr in iter_buffers() do
       local v
       if not check_buffer_conditions(buf_ptr) then
          v = true
@@ -212,14 +246,20 @@ function recheck_groups(old_mask, new_mask)
       return
    end
    for buf_ptr, buf in pairs(g.buffers) do
-      for nick_name, nick_ptr, nick_group in iter_nicklist(buf_ptr) do
-         local old_match = nick_group:match_list(old_mask, true)
-         local new_match = nick_group:match_list(new_mask, true)
-         if not old_match and new_match then
-            w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "0")
-         elseif old_match and not new_match then
-            buf.nicklist[nick_name] = nil
-            w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "1")
+      local current_group = ""
+      for ptr, hdata, type in iter_nicklist(buf_ptr) do
+         if type == "group" then
+            current_group = w.hdata_string(hdata, ptr, "name")
+         else
+            local old_match = current_group:match_list(old_mask, true)
+            local new_match = current_group:match_list(new_mask, true)
+            if not old_match and new_match then
+               w.nicklist_nick_set(buf_ptr, ptr, "visible", "0")
+            elseif old_match and not new_match then
+               local nick_name = w.hdata_string(hdata, ptr, "name")
+               buf.nicklist[nick_name] = nil
+               w.nicklist_nick_set(buf_ptr, ptr, "visible", "1")
+            end
          end
       end
    end
@@ -249,17 +289,22 @@ end
 function set_all_nicks_visibility(buf_ptr, flag, is_init)
    flag = flag and "1" or "0"
    local mask = g.config.groups
-   for nick_name, nick_ptr, nick_group in iter_nicklist(buf_ptr) do
-      if nick_group:match_list(mask, true) then
-         w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", flag)
-      elseif is_init then
-         w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "1")
+   local current_group = ""
+   for ptr, hdata, type in iter_nicklist(buf_ptr) do
+      if type == "group" then
+         current_group = w.hdata_string(hdata, ptr, "name")
+      else
+         if current_group:match_list(mask, true) then
+            w.nicklist_nick_set(buf_ptr, ptr, "visible", flag)
+         elseif is_init then
+            w.nicklist_nick_set(buf_ptr, ptr, "visible", "1")
+         end
       end
    end
 end
 
 function hide_all_nicks(flag)
-   for buf_name, buf_ptr in iter_buffers() do
+   for buf_ptr in iter_buffers() do
       local total_nicks = w.buffer_get_integer(buf_ptr, "nicklist_nicks_count")
       if total_nicks > 0 and check_buffer_conditions(buf_ptr) then
          if flag then
@@ -278,6 +323,8 @@ function show_nick(buffer, nick_name, timestamp)
          buf.nicklist[nick_name] = timestamp
          if w.nicklist_nick_get_integer(buffer, ptr, "visible") == 0 then
             w.nicklist_nick_set(buffer, ptr, "visible", "1")
+            w.hook_hsignal_send(script_name.."_visibility",
+                                { buffer = buffer, nick = nick_name, state = 1})
          end
       end
    end
@@ -353,9 +400,15 @@ function names_end_cb(_, signal, msg)
          end
          local buf = g.buffers[buf_ptr]
          local mask = g.config.groups
-         for nick_name, nick_ptr, group_name in iter_nicklist(buf_ptr) do
-            if not buf.nicklist[nick_name] and group_name:match_list(mask, true) then
-               w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "0")
+         local current_group = ""
+         for ptr, hdata, type in iter_nicklist(buf_ptr) do
+            if type == "group" then
+               current_group = w.hdata_string(hdata, ptr, "name")
+            else
+               local nick_name = w.hdata_string(hdata, ptr, "name")
+               if not buf.nicklist[nick_name] and current_group:match_list(mask, true) then
+                  w.nicklist_nick_set(buf_ptr, ptr, "visible", "0")
+               end
             end
          end
          buf.hold = nil
@@ -419,6 +472,8 @@ function timer_cb()
             if timestamp < start_time then
                local nick_ptr = w.nicklist_search_nick(buf_ptr, "", nick_name)
                w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", "0")
+               w.hook_hsignal_send(script_name.."_visibility",
+                                   { buffer = buf_ptr, nick = nick_name, state = 0 })
             else
                b[buf_ptr].nicklist[nick_name] = timestamp
             end
@@ -456,16 +511,22 @@ function cmd_toggle(buf_ptr)
    if buf then
       buf.hold = not buf.hold
       local mask = g.config.groups
-      for nick_name, nick_ptr, nick_group in iter_nicklist(buf_ptr) do
-         local flag = "1"
-         if not buf.hold then
-            if buf.nicklist[nick_name] then
-               buf.nicklist[nick_name] = os.time()
-            elseif nick_group:match_list(mask, true) then
-               flag = "0"
+      local current_group = ""
+      for ptr, hdata, type in iter_nicklist(buf_ptr) do
+         if type == "group" then
+            current_group = w.hdata_string(hdata, ptr, "name")
+         else
+            local flag = "1"
+            local nick_name = w.hdata_string(hdata, ptr, "name")
+            if not buf.hold then
+               if buf.nicklist[nick_name] then
+                  buf.nicklist[nick_name] = os.time()
+               elseif current_group:match_list(mask, true) then
+                  flag = "0"
+               end
             end
+            w.nicklist_nick_set(buf_ptr, ptr, "visible", flag)
          end
-         w.nicklist_nick_set(buf_ptr, nick_ptr, "visible", flag)
       end
    end
    return w.WEECHAT_RC_OK
