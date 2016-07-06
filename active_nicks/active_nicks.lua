@@ -77,7 +77,8 @@ function main()
    if reg_ok then
       local wee_ver = tonumber(w.info_get("version_number", "") or 0)
       if wee_ver < 0x01000000 then
-         w.print("", w.prefix("error").."Upgrade your WeeChat, dumbass!")
+         w.print("", w.prefix("error")..script_name..": Your WeeChat is outdated!")
+         w.command("", "/wait 1ms /lua unload "..script_name)
          return
       end
 
@@ -96,14 +97,8 @@ function main()
       hook_print()
       hook_timer()
 
-      w.hook_command(
-         script_name,
-         "Control "..script_name,
-         "toggle",
-         "toggle: Toggle current buffer",
-         "toggle",
-         "command_cb", "")
-
+      w.hook_command(script_name, "Control "..script_name, "toggle",
+         "toggle: Toggle current buffer", "toggle", "command_cb", "")
    end
 end
 
