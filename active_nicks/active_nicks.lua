@@ -170,7 +170,7 @@ function iter_nicklist(buffer)
             end
          end
          current_item, h_current = next_item, h_next
-         return ret_item, h_ret, (h_ret == h_nick and "nick" or "group")
+         return ret_item, h_ret, (h_ret == h_group)
       end
    end
 end
@@ -267,8 +267,8 @@ function recheck_groups(old_mask, new_mask)
    end
    for buf_ptr, buf in pairs(g.buffers) do
       local current_group = ""
-      for ptr, hdata, type in iter_nicklist(buf_ptr) do
-         if type == "group" then
+      for ptr, hdata, is_group in iter_nicklist(buf_ptr) do
+         if is_group then
             current_group = w.hdata_string(hdata, ptr, "name")
          else
             local old_match = current_group:match_list(old_mask, true)
@@ -310,8 +310,8 @@ function set_all_nicks_visibility(buf_ptr, flag, is_init)
    flag = flag and "1" or "0"
    local mask = g.config.groups
    local current_group = ""
-   for ptr, hdata, type in iter_nicklist(buf_ptr) do
-      if type == "group" then
+   for ptr, hdata, is_group in iter_nicklist(buf_ptr) do
+      if is_group then
          current_group = w.hdata_string(hdata, ptr, "name")
       else
          if current_group:match_list(mask, true) then
@@ -424,8 +424,8 @@ function names_end_cb(_, signal, msg)
          local buf = g.buffers[buf_ptr]
          local mask = g.config.groups
          local current_group = ""
-         for ptr, hdata, type in iter_nicklist(buf_ptr) do
-            if type == "group" then
+         for ptr, hdata, is_group in iter_nicklist(buf_ptr) do
+            if is_group then
                current_group = w.hdata_string(hdata, ptr, "name")
             else
                local nick_name = w.hdata_string(hdata, ptr, "name")
@@ -543,8 +543,8 @@ function cmd_toggle(buf_ptr)
       buf.hold = not buf.hold
       local mask = g.config.groups
       local current_group = ""
-      for ptr, hdata, type in iter_nicklist(buf_ptr) do
-         if type == "group" then
+      for ptr, hdata, is_group in iter_nicklist(buf_ptr) do
+         if is_group then
             current_group = w.hdata_string(hdata, ptr, "name")
          else
             local flag = "1"
