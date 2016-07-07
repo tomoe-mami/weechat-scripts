@@ -1,4 +1,4 @@
-require "socket"
+local socket = require "socket"
 table.unpack = table.unpack or unpack
 w, script_name = weechat, "mpd_events"
 
@@ -364,7 +364,7 @@ end
 
 function main()
    local reg_ok = w.register(
-      script_name, "singalaut", "0.1", "WTFPL",
+      script_name, "singalaut <https://github.com/tomoe-mami>", "0.1", "WTFPL",
       "Sends hsignal on MPD events", "unload_cb", "")
 
    if reg_ok then

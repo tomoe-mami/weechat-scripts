@@ -1,11 +1,11 @@
 local pcre = require "rex_pcre"
-local utf8 = require "utf8"
+local utf8 = require (utf8 and "lua-utf8" or "utf8")
 
 local w = weechat
 local g = {
    script = {
       name = "prettype",
-      author = "tomoe-mami <https://github.com/tomoe-mami>",
+      author = "singalaut <https://github.com/tomoe-mami>",
       license = "WTFPL",
       version = "0.4",
       description = "Prettify text you typed with auto-capitalization and proper unicode symbols"
@@ -38,7 +38,7 @@ local g = {
 
 function u(...)
    local result = ""
-   for _, c in ipairs(arg) do
+   for _, c in ipairs({...}) do
       if type(c) == "number" then
          c = utf8.char(c)
       end
@@ -313,7 +313,7 @@ g.replacements = {
    { "(\\d+)\\s*x\\s*(\\d+)", u("%1", 0x00d7, "%2") },
    { "[.?!][\\s\"]+\\p{Ll}", utf8.upper },
    { "^(?:" .. PHOLD_START_RE .. "\\d+" .. PHOLD_END_RE .. "\\s*|[\"])?\\p{Ll}", utf8.upper },
-   { "(^(?:" .. PHOLD_START_RE .. "\\d+" .. PHOLD_END_RE .. "\\s*)?|[-\\x{2014}\\s(\[\"])'", u("%1", 0x2018) },
+   { "(^(?:" .. PHOLD_START_RE .. "\\d+" .. PHOLD_END_RE .. "\\s*)?|[-\\x{2014}\\[(\"\\s])'", u("%1", 0x2018) },
    { "'", u(0x2019) },
    { "(^(?:" .. PHOLD_START_RE .. "\\d+" .. PHOLD_END_RE .. "\\s*)?|[-\\x{2014}\\[(\\x{2018}\\s])\"", u("%1", 0x201c) },
    { "\"", u(0x201d) },
