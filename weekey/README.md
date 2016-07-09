@@ -3,13 +3,18 @@ weekey
 
 *(This script requires WeeChat 1.0 or newer)*
 
-Display recently pressed key combo and the command bound to it in bar items.
+Display recently pressed key combo and the command bound to it on bar items.
 
 The name of the bar items are:
 
 - **weekey_combo**: The key combo
 - **weekey_command**: The command for the key combo
 - **weekey_context**: Context of the key combo
+
+Here's a how it looks with item weekey_combo and weekey_command added to input
+bar:
+
+![demo][]
 
 ### Overriding combo name
 
@@ -85,3 +90,5 @@ Color for key/modifier separator.
 ##### plugins.var.lua.weekey.color_local_command
 
 Color for command from local bindings.
+
+[demo]: https://i.imgur.com/62hkrVp.gif
