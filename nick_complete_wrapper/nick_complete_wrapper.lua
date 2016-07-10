@@ -18,14 +18,18 @@ function check_utf8_support()
       -- lua 5.3 with builtin utf8 support
       string_length = utf8.len
    else
-      -- lua < 5.3 with utf8 module
+      -- lua < 5.3 with [lua-]utf8 module
+      local pkgs = { "lua-utf8", "utf8" }
       for _, searcher in ipairs(package.searchers or package.loaders) do
-         local loader = searcher("utf8")
-         if type(loader) == "function" then
-            package.preload.utf8 = loader
-            utf8 = require "utf8"
-            if type(utf8.len) == "function" then
-               string_length = utf8.len
+         for _, pkg_name in ipairs(pkgs) do
+            local loader = searcher(pkg_name)
+            if type(loader) == "function" then
+               package.preload[pkg_name] = loader
+               utf8 = require(pkg_name)
+               if type(utf8.len) == "function" then
+                  string_length = utf8.len
+                  return
+               end
             end
          end
       end
