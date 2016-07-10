@@ -12,15 +12,6 @@ function print(...)
    w.print("", script_name.."\t"..string.format(...))
 end
 
-function wc_match_old(s, p)
-   p = p:lower():gsub("([^a-z0-9_!@*])", "%%%1"):gsub("%*", ".*")
-   return s:lower():match(p)
-end
-
-function wc_match_new(s, p)
-   return w.string_match(s, p, 0) == 1
-end
-
 function completion_context_old(buffer)
    local input, base_word, prev_arg = w.buffer_get_string(buffer, "input")
    input = input:match("^%S+%s*(.*)$")
@@ -98,16 +89,9 @@ end
 
 function check_weechat_version()
    local wee_ver = tonumber(w.info_get("version_number", "") or 0)
-   if wee_ver < 0x00030700 then
+   if wee_ver < 0x01000000 then
       print("%sYour WeeChat is OUTDATED!!!", w.color("*red"))
       return
-   end
-
-   if wee_ver < 0x01000000 then
-      -- weechat < 1.0: * in the middle of string isn't treated as wildcard
-      wc_match = wc_match_old
-   else
-      wc_match = wc_match_new
    end
 
    if wee_ver < 0x01030000 then
@@ -341,7 +325,7 @@ function get_matching_labels(host, o)
    for mask, opt in pairs(options.mask) do
       local mp = parse_host(mask)
       local new_mask = string.format("%s!%s@%s", mp.nick or "*", mp.user or "*", mp.host or "*")
-      if wc_match(host, new_mask) then
+      if w.string_match(host, new_mask, 0) == 1 then
          local value = w.config_string(opt)
          if o.eval then
             value = prefix..
@@ -391,8 +375,6 @@ function commands.set(buffer, param)
    local mask, label = param:match("^(%S+)%s+(.+)")
    if empty(label) then
       return commands.get(buffer, param)
-      -- print("Missing label")
-      -- return w.WEECHAT_RC_ERROR
    end
    w.command(buffer, string.format("/set %s.mask.%s %s", script_name, mask, label))
    return w.WEECHAT_RC_OK
