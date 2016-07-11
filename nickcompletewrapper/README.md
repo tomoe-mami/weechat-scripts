@@ -1,4 +1,4 @@
-nick_complete_wrapper
+nickcompletewrapper
 =====================
 
 Wraps nick completion with custom prefix and/or suffix.
