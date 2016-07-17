@@ -5,11 +5,14 @@ g = {
    defaults = {
       format = {
          type = "string",
-         value = "number , name, (hotlist)",
+         value = "number ,rel, short_name,(lag), (hotlist)",
          desc = [[
 Format of buffer entry. The syntax is a bit similar with bar items except a
-comma won't add extra space and '+' is just literal character. The variables you
-can use in this option are: number, name, hotlist, rel, index]]
+comma won't add extra space and '+' is used to apply color of item to the
+characters around it. Available item names are: number, short_name, name,
+full_name, hotlist, nick_prefix, lag, rel, index. You can also insert buffer's
+local variable by prefixing the name with backslash (eg: \type will insert
+the value of local variable "type")]]
       },
       bar_name = {
          type = "string",
@@ -19,7 +22,8 @@ can use in this option are: number, name, hotlist, rel, index]]
       always_show_number = {
          type = "boolean",
          value = "on",
-         desc = "Always display the buffer number"
+         desc = [[If this option is enabled and option `relation` is set to merged
+(the default), merged buffers will always have their numbers shown.]]
       },
       show_hidden_buffers = {
          type = "boolean",
@@ -42,7 +46,8 @@ lag indicator]],
          type = "string",
          value = "merged",
          choices = { merged = true, same_server = true, none = true },
-         desc = ""
+         desc = [[Relation mode between buffers (merged = merged buffers,
+same_server = buffers within the same server, none = no relation).]],
       },
       rel_char_start = {
          type = "string",
@@ -122,7 +127,7 @@ lag indicator]],
       color_prefix_not_joined = {
          type = "color",
          value = "red",
-         desc = "Color for prefix_not_member"
+         desc = "Color for option prefix_not_joined"
       },
       color_delim = {
          type = "color",
