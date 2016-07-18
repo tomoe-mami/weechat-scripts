@@ -42,6 +42,17 @@ joined the channel]]
          desc = [[If enabled, you can use item `lag` in format option to show
 lag indicator]],
       },
+      max_name_length = {
+         type = "number",
+         value = "0",
+         desc = "Maximum length of buffer name"
+      },
+      align_number = {
+         type = "string",
+         value = "right",
+         choices = { left = true, right = true, none = true },
+         desc = "Align numbers and indexes"
+      },
       relation = {
          type = "string",
          value = "merged",
@@ -68,6 +79,11 @@ same_server = buffers within the same server, none = no relation).]],
          type = "string",
          value = "",
          desc = "Characters for non related buffers"
+      },
+      char_more = {
+         type = "string",
+         value = "+",
+         desc = "Characters that will be appended to an item when it's truncated"
       },
       color_number = {
          type = "color",
@@ -173,6 +189,7 @@ function main()
          return
       end
 
+      check_utf8_support()
       config_init()
       bar_init()
       w.bar_item_new(script_name, "item_cb", "")
@@ -192,10 +209,11 @@ function register_hooks()
 
    for _, name in ipairs({
       "buffer_switch", "buffer_zoomed", "buffer_unzoomed", "window_switch",
-      "buffer_renamed", "window_opened", "window_closing"}) do
+      "window_opened", "window_closing"}) do
       w.hook_signal("9000|"..name, "prop_changed_cb", "")
    end
 
+   w.hook_signal("9000|buffer_renamed", "renamed_cb", "")
    w.hook_signal("9000|buffer_localvar_*", "localvar_changed_cb", "")
    w.hook_signal("9000|signal_sigwinch", "redraw_cb", "")
    w.hook_signal("9000|hotlist_changed", "hotlist_cb", "")
@@ -372,6 +390,8 @@ function config_cb(param, opt_name, opt_value)
    if info then
       if info.type == "boolean" then
          opt_value = w.config_string_to_boolean(opt_value) == 1
+      elseif info.type == "number" then
+         opt_value = tonumber(opt_value)
       elseif info.choices and not info.choices[opt_value] then
          opt_value = info.value
       end
@@ -385,13 +405,12 @@ function config_cb(param, opt_name, opt_value)
          bar_init()
       elseif opt_name == "enable_lag_indicator" then
          lag_hooks()
-      elseif opt_name == "relation" then
-         return rebuild_cb(nil, "change_relation")
-      elseif opt_name == "show_hidden_buffers" then
-         return rebuild_cb(nil, "hidden_flag")
-      elseif opt_name == "prefix_not_joined" or
+      elseif opt_name == "relation" or
+         opt_name == "show_hidden_buffers" or
+         opt_name == "max_name_length" or
+         opt_name == "prefix_not_joined" or
          opt_name == "color_prefix_not_joined" then
-         return rebuild_cb(nil, "prefix_changed")
+         return rebuild_cb(nil, "config_changed")
       end
       w.bar_item_update(script_name)
    end
@@ -485,7 +504,7 @@ function rebuild_cb(_, signal_name, ptr_buffer)
    g.buffers, g.buffer_pointers, g.max_num_length = get_buffer_list()
    w.bar_item_update(script_name)
    if signal_name == "script_init" then
-      w.hook_timer(30, 0, 1, "autoscroll", "")
+      w.hook_timer(50, 0, 1, "autoscroll", "now")
    else
       autoscroll()
    end
@@ -567,15 +586,26 @@ function localvar_changed_cb(_, signal_name, ptr_buffer)
    return w.WEECHAT_RC_OK
 end
 
+function renamed_cb(_, _, ptr_buffer)
+   local max_length, char_more = g.config.max_name_length, g.config.char_more
+   local buffer = get_buffer_by_pointer(ptr_buffer)
+   if buffer then
+      for _, prop in ipairs({"full_name", "name", "short_name"}) do
+         buffer[prop] = w.buffer_get_string(buffer.pointer, prop)
+         if max_length > 0 then
+            buffer[prop] = string_limit(buffer[prop], max_length, char_more)
+         end
+      end
+   end
+   w.bar_item_update(script_name)
+   autoscroll("now")
+   return w.WEECHAT_RC_OK
+end
+
 function prop_changed_cb(_, signal_name, ptr)
    local current_buffer = w.current_buffer()
    local h_buffer = w.hdata_get("buffer")
    for i, row in ipairs(g.buffers) do
-      if signal_name == "buffer_renamed" then
-         row.full_name = w.buffer_get_string(row.pointer, "full_name")
-         row.name = w.buffer_get_string(row.pointer, "name")
-         row.short_name = w.buffer_get_string(row.pointer, "short_name")
-      end
       row.displayed = w.buffer_get_integer(row.pointer, "num_displayed") > 0
       row.current = row.pointer == current_buffer
       row.zoomed = w.buffer_get_integer(row.pointer, "zoomed") == 1
@@ -587,13 +617,13 @@ function prop_changed_cb(_, signal_name, ptr)
    end
 
    w.bar_item_update(script_name)
-   autoscroll()
+   autoscroll("now")
    return w.WEECHAT_RC_OK
 end
 
 function redraw_cb(_, signal_name, ptr)
    w.bar_item_update(script_name)
-   autoscroll()
+   autoscroll("now")
    return w.WECHAT_RC_OK
 end
 
@@ -678,32 +708,39 @@ function get_buffer_list()
    local h_buffer, h_nick = w.hdata_get("buffer"), w.hdata_get("nick")
    local ptr_buffer = w.hdata_get_list(h_buffer, "gui_buffers")
    while ptr_buffer ~= "" do
-      local t = {
-         pointer = ptr_buffer,
-         number = w.hdata_integer(h_buffer, ptr_buffer, "number"),
-         full_name = w.hdata_string(h_buffer, ptr_buffer, "full_name"),
-         name = w.hdata_string(h_buffer, ptr_buffer, "name"),
-         short_name = w.hdata_string(h_buffer, ptr_buffer, "short_name"),
-         hidden = w.hdata_integer(h_buffer, ptr_buffer, "hidden") == 1,
-         active = w.hdata_integer(h_buffer, ptr_buffer, "active"),
-         zoomed = w.hdata_integer(h_buffer, ptr_buffer, "zoomed") == 1,
-         merged = false,
-         displayed = w.hdata_integer(h_buffer, ptr_buffer, "num_displayed") > 0,
-         current = ptr_buffer == current_buffer,
-         var = w.hdata_hashtable(h_buffer, ptr_buffer, "local_variables"),
-         rel = ""
-      }
+      local is_hidden = w.hdata_integer(h_buffer, ptr_buffer, "hidden") == 1
+      if not is_hidden or conf.show_hidden_buffers then
+         local t = {
+            pointer = ptr_buffer,
+            number = w.hdata_integer(h_buffer, ptr_buffer, "number"),
+            full_name = w.hdata_string(h_buffer, ptr_buffer, "full_name"),
+            name = w.hdata_string(h_buffer, ptr_buffer, "name"),
+            short_name = w.hdata_string(h_buffer, ptr_buffer, "short_name"),
+            hidden = w.hdata_integer(h_buffer, ptr_buffer, "hidden") == 1,
+            active = w.hdata_integer(h_buffer, ptr_buffer, "active"),
+            zoomed = w.hdata_integer(h_buffer, ptr_buffer, "zoomed") == 1,
+            merged = false,
+            displayed = w.hdata_integer(h_buffer, ptr_buffer, "num_displayed") > 0,
+            current = ptr_buffer == current_buffer,
+            var = w.hdata_hashtable(h_buffer, ptr_buffer, "local_variables"),
+            rel = ""
+         }
 
-      local num_len = #tostring(t.number)
-      if num_len > max_num_len then
-         max_num_len = num_len
-      end
+         local num_len = #tostring(t.number)
+         if num_len > max_num_len then
+            max_num_len = num_len
+         end
 
-      if not t.hidden or conf.show_hidden_buffers then
          index = index + 1
          pointers[ptr_buffer] = index
          if t.current then
             g.current_index = index
+         end
+
+         if conf.max_name_length > 0 then
+            t.name = string_limit(t.name, conf.max_name_length, conf.char_more)
+            t.full_name = string_limit(t.full_name, conf.max_name_length, conf.char_more)
+            t.short_name = string_limit(t.short_name, conf.max_name_length, conf.char_more)
          end
 
          if t.var.type == "channel" then
@@ -718,9 +755,6 @@ function get_buffer_list()
                t.nick_prefix = conf.prefix_not_joined
                t.nick_prefix_color = conf.color_prefix_not_joined
             end
-         -- else
-         --    t.nick_prefix = " "
-         --    t.nick_prefix_color = "default"
          end
 
          if conf.relation == "same_server" then
@@ -758,15 +792,13 @@ function get_buffer_list()
                table.insert(groups[t.number], index)
             end
          end
-      end
+
+         entries[index] = t
+      end -- if not is_hidden ...
 
       ptr_buffer = w.hdata_pointer(h_buffer, ptr_buffer, "next_buffer")
 
-      if not t.hidden or conf.show_hidden_buffers then
-         entries[index] = t
-      end
-
-   end
+   end -- while ptr_buffer ...
 
    if conf.relation == "same_server" then
       entries, pointers = group_by_server(entries, groups, pointers)
@@ -813,19 +845,19 @@ function group_by_server(entries, groups)
    return new_list, new_pointers
 end
 
-function replace_format(fmt, items, vars, colors)
+function replace_format(fmt, items, vars, colors, char_more)
    return string.gsub(fmt..",", "([^,]-),", function (seg)
       if seg == "" then
          return colors.delim..","
       else
          local before, plus_before, key, plus_after, after =
-            seg:match("^(.-)(%+?)(\\?[a-z_]+)(%+?)(.-)$")
+            seg:match("^(.-)(%+?)(%%?[a-z0-9_]+)(%+?)(.-)$")
          if not key then
             return colors.delim..seg
          else
             local item_color = colors[key] or colors.base
             local val
-            if key:sub(1, 1) == "\\" then
+            if key:sub(1, 1) == "%" then
                key = key:sub(2)
                if vars[key] and vars[key] ~= "" then
                   val = vars[key]
@@ -855,9 +887,12 @@ function generate_output()
       return ""
    end
    local hl, conf, c = g.hotlist, g.config, g.colors
-   local num_len = g.max_num_length
-   local num_fmt = "%"..num_len.."s"
-   local idx_fmt = "%"..#tostring(total_entries).."s"
+   local num_fmt, idx_fmt
+   if conf.align_number ~= "none" then
+      local minus = conf.align_number == "left" and "-" or ""
+      num_fmt = "%"..minus..g.max_num_length.."s"
+      idx_fmt = "%"..minus..#tostring(total_entries).."s"
+   end
    local entries, last_num = {}, 0
    local rels = {
       start = conf.rel_char_start,
@@ -891,9 +926,11 @@ function generate_output()
       if not conf.always_show_number and b.merged and b.rel ~= "start" then
          items.number = ""
       end
-      items.index = idx_fmt:format(i)
-      items.number = num_fmt:format(items.number)
+      items.index = idx_fmt and idx_fmt:format(i) or i
       colors.index, colors.number = c.color_number, c.color_number
+      if num_fmt then
+         items.number = num_fmt:format(items.number)
+      end
 
       local hotlist, color_highest_lev = hl.buffers[b.pointer]
       if hotlist then
@@ -933,7 +970,7 @@ function generate_output()
          colors.lag = c.color_lag
       end
 
-      local entry = replace_format(conf.format, items, b.var, colors)
+      local entry = replace_format(conf.format, items, b.var, colors, conf.char_more)
       buffers[i].length = w.strlen_screen(entry)
       if b.current then
          entry = c.color_current..strip_bg_color(entry)
@@ -955,9 +992,9 @@ function scroll_bar_area(t)
       local visible_chars = width * height
       local buffers, length_before = g.buffers, 0
       for i = 1, t.offset do
-         length_before = length_before + buffers[i].length + 1
+         length_before = length_before + (buffers[i].length or 0) + 1
       end
-      local own_length = buffers[t.offset+1].length + 1
+      local own_length = (buffers[t.offset+1].length or 0) + 1
       local last_visible_x = visible_chars + scroll_x
       local amount_x
       if length_before < scroll_x then
@@ -1015,7 +1052,7 @@ function scroll_bar_area(t)
    end
 end
 
-function autoscroll()
+function autoscroll(mode)
    local bar_name = g.config.bar_name
    local ptr_bar = w.bar_search(bar_name)
    if ptr_bar == "" then
@@ -1041,6 +1078,10 @@ function autoscroll()
       param.fill = w.config_string(w.config_get(opt_prefix.."filling_top_bottom"))
    else
       param.fill = w.config_string(w.config_get(opt_prefix.."filling_left_right"))
+   end
+   if param.fill == "horizontal" and mode ~= "now" then
+      -- FIXME: FUCK HORIZONTAL BAR!
+      w.hook_timer(100, 0, 1, "autoscroll", "now")
    end
    local ptr_area = w.hdata_pointer(param.h_bar, ptr_bar, "bar_window")
    if ptr_area ~= "" then
@@ -1119,6 +1160,61 @@ function strip_bg_color(text)
       text = text:gsub(p, r)
    end
    return text
+end
+
+function module_exists(name)
+   for _, searcher in ipairs(package.searchers or package.loaders) do
+      local loader = searcher(name)
+      if type(loader) == "function" then
+         package.preload[name] = loader
+         return true
+      end
+   end
+end
+
+function check_utf8_support()
+   if not utf8 then
+      for _, name in ipairs({"lua-utf8", "utf8"}) do
+         if module_exists(name) then
+            utf8 = require(name)
+            break
+         end
+      end
+   end
+   if not utf8 then
+      w.print("", script_name.."\tWarning: Your version of Lua is missing UTF8 support.")
+      return
+   end
+end
+
+function string_limit(text, limit, char_more)
+   limit = tonumber(limit)
+   if not limit or limit < 1 then
+      return text
+   end
+   local nbytes, swidth = #text, w.strlen_screen(text)
+   if swidth <= limit then
+      return text
+   end
+   if nbytes == swidth or not utf8 then
+      text = text:sub(1, limit)
+      if #text < nbytes then
+         text = text..char_more
+      end
+      return text
+   else
+      local text2 = ""
+      for _, codepoint in utf8.codes(text) do
+         local char = utf8.char(codepoint)
+         if w.strlen_screen(text2..char) > limit then
+            text2 = text2..char_more
+            break
+         else
+            text2 = text2..char
+         end
+      end
+      return text2
+   end
 end
 
 main()
