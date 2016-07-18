@@ -332,13 +332,6 @@ function lag_timer_cb(param)
    if buffer then
       local cur_time = os.time()
       local min_show = w.config_integer(w.config_get("irc.network.lag_min_show"))
-      -- w.print("", string.format("%s: %s %d:%d | %s -> %s",
-      --                           buffer.full_name,
-      --                           timer_type,
-      --                           (buffer.lag or 0),
-      --                           min_show,
-      --                           os.date("%Y-%m-%d %H:%M:%S", cur_time),
-      --                           os.date("%Y-%m-%d %H:%M:%S", next_check)))
       if buffer.lag and buffer.lag >= min_show then
          lag_set_timer("refresh", server_name)
       elseif connected then
@@ -489,12 +482,6 @@ function dump_keys(t)
 end
 
 function rebuild_cb(_, signal_name, ptr_buffer)
-   -- if signal_name == "buffer_moved" then
-   --    w.print("", string.format("%s: %d (%s)",
-   --                              signal_name,
-   --                              w.buffer_get_integer(ptr_buffer, "number"),
-   --                              w.buffer_get_string(ptr_buffer, "full_name")))
-   -- end
    g.buffers, g.buffer_pointers, g.max_num_length = get_buffer_list()
    w.bar_item_update(script_name)
    if signal_name == "script_init" then
@@ -627,12 +614,6 @@ function nicklist_cb(_, signal_name, data)
    if not nick then
       nick = w.nicklist_nick_get_string(ptr_buffer, ptr_nick, "name")
    end
-   -- w.print(ptr_buffer, string.format(
-   --                      "%s:%d: %s %q",
-   --                      signal_name,
-   --                      w.buffer_get_integer(ptr_buffer, "nicklist_nicks_count"),
-   --                      nick,
-   --                      w.nicklist_nick_get_string(ptr_buffer, ptr_nick, "prefix")))
    if nick == buffer.var.nick then
       if signal_name == "nicklist_nick_removed" then
          buffer.nick_prefix = g.config.prefix_not_joined
@@ -641,8 +622,6 @@ function nicklist_cb(_, signal_name, data)
          buffer.nick_prefix = w.nicklist_nick_get_string(ptr_buffer, ptr_nick, "prefix")
          buffer.nick_prefix_color = w.nicklist_nick_get_string(ptr_buffer, ptr_nick, "prefix_color")
       end
-      -- buffer.nick_prefix = prefix
-      -- buffer.nick_prefix_color = prefix_color
       w.bar_item_update(script_name)
    end
    return w.WEECHAT_RC_OK
@@ -970,38 +949,69 @@ function scroll_bar_area(t)
    if width < 1 or height < 1 then
       return
    end
-   local col_height = w.hdata_integer(t.h_area, t.ptr_area, "screen_lines")
-   if t.fill:sub(1, 8) == "columns_" and col_height < 1 then
-      return
-   end
-   local col_width = w.hdata_integer(t.h_area, t.ptr_area, "screen_col_size")
    local scroll_x = w.hdata_integer(t.h_area, t.ptr_area, "scroll_x")
-   local scroll_y = w.hdata_integer(t.h_area, t.ptr_area, "scroll_y")
-   local cur_y, col_count, bottom_y = t.cur_y, 0, scroll_y + height
 
-   if cur_y > scroll_y and cur_y < bottom_y then
-      return
-   end
+   if t.fill == "horizontal" then
+      local visible_chars = width * height
+      local buffers, length_before = g.buffers, 0
+      for i = 1, t.offset do
+         length_before = length_before + buffers[i].length + 1
+      end
+      local own_length = buffers[t.offset+1].length + 1
+      local last_visible_x = visible_chars + scroll_x
+      local amount_x
+      if length_before < scroll_x then
+         amount_x = length_before - scroll_x - 1
+      elseif length_before + own_length > last_visible_x then
+         amount_x = "+"..(length_before - last_visible_x) + own_length
+      end
+      if amount_x then
+         w.command(t.ptr_buffer, string.format(
+                                    "/bar scroll %s %s x%s",
+                                    t.bar_name,
+                                    t.win_num,
+                                    amount_x))
+      end
+   else
+      local col_height = w.hdata_integer(t.h_area, t.ptr_area, "screen_lines")
+      if t.fill:sub(1, 8) == "columns_" and col_height < 1 then
+         return
+      end
+      local col_width = w.hdata_integer(t.h_area, t.ptr_area, "screen_col_size")
+      local scroll_y = w.hdata_integer(t.h_area, t.ptr_area, "scroll_y")
+      local cur_y, col_count, bottom_y = t.offset, 0, scroll_y + height
 
-   local amount_y, amount_x
-   if t.fill == "columns_vertical" then
-      cur_y = t.cur_y % col_height
-   elseif t.fill == "columns_horizontal" then
-      col_count = math.floor(width / col_width)
-      cur_y = math.floor(cur_y / col_count) % col_height
-   end
-   if cur_y < scroll_y then
-      amount_y = cur_y - scroll_y - 1
-   elseif cur_y >= bottom_y then
-      amount_y = "+"..cur_y - bottom_y + 1
-   end
+      if scroll_x > 0 then
+         w.command(t.ptr_buffer, string.format(
+                                    "/bar scroll %s %s xb",
+                                    t.bar_name,
+                                    t.win_num))
+      end
 
-   if amount_y then
-      w.command(t.ptr_buffer, string.format(
-                                 "/bar scroll %s %s y%s",
-                                 t.bar_name,
-                                 t.win_num,
-                                 amount_y))
+      if cur_y > scroll_y and cur_y < bottom_y then
+         return
+      end
+
+      local amount_y
+      if t.fill == "columns_vertical" then
+         cur_y = cur_y % col_height
+      elseif t.fill == "columns_horizontal" then
+         col_count = math.floor(width / col_width)
+         cur_y = math.floor(cur_y / col_count) % col_height
+      end
+      if cur_y < scroll_y then
+         amount_y = cur_y - scroll_y - 1
+      elseif cur_y >= bottom_y then
+         amount_y = "+"..cur_y - bottom_y + 1
+      end
+
+      if amount_y then
+         w.command(t.ptr_buffer, string.format(
+                                    "/bar scroll %s %s y%s",
+                                    t.bar_name,
+                                    t.win_num,
+                                    amount_y))
+      end
    end
 end
 
@@ -1024,7 +1034,7 @@ function autoscroll()
       ptr_buffer = w.current_buffer(),
       ptr_bar = ptr_bar,
       pos = w.config_string(w.config_get(opt_prefix.."position")),
-      cur_y = g.current_index - 1,
+      offset = g.current_index - 1,
       bar_name = bar_name
    }
    if param.pos == "top" or param.pos == "bottom" then
