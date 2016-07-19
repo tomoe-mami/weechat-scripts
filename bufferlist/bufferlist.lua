@@ -548,17 +548,23 @@ function regroup_by_server(own_index, buffer, new_var)
       if pos == server_index then
          buffer.rel = ""
       else
-         buffer.rel = "end"
          if pos ~= own_index then
             pointers[buffer.pointer] = pos
             table.insert(buffers, pos, buffer)
             table.remove(buffers, own_index + 1)
          end
-         local prev_buffer = buffers[pos - 1]
-         if prev_buffer.rel == "end" then
-            prev_buffer.rel = "middle"
-         elseif prev_buffer.rel == "" then
-            prev_buffer.rel = "start"
+         local next_buffer, prev_buffer = buffers[pos+1], buffers[pos-1]
+         if next_buffer and next_buffer.var.server == new_var.server then
+            buffer.rel = "middle"
+         else
+            buffer.rel = "end"
+            if prev_buffer then
+               if prev_buffer.rel == "end" then
+                  prev_buffer.rel = "middle"
+               elseif prev_buffer.rel == "" then
+                  prev_buffer.rel = "start"
+               end
+            end
          end
       end
    end
@@ -590,10 +596,10 @@ function renamed_cb(_, _, ptr_buffer)
    local max_length, char_more = g.config.max_name_length, g.config.char_more
    local buffer = get_buffer_by_pointer(ptr_buffer)
    if buffer then
-      for _, prop in ipairs({"full_name", "name", "short_name"}) do
-         buffer[prop] = w.buffer_get_string(buffer.pointer, prop)
+      for _, k in ipairs({"full_name", "name", "short_name"}) do
+         buffer[k] = w.string_remove_color(w.buffer_get_string(buffer.pointer, k), "")
          if max_length > 0 then
-            buffer[prop] = string_limit(buffer[prop], max_length, char_more)
+            buffer[k] = string_limit(buffer[k], max_length, char_more)
          end
       end
    end
@@ -707,16 +713,14 @@ function get_buffer_list()
    local current_buffer = w.current_buffer()
    local h_buffer, h_nick = w.hdata_get("buffer"), w.hdata_get("nick")
    local ptr_buffer = w.hdata_get_list(h_buffer, "gui_buffers")
+   local names = { "name", "short_name", "full_name" }
    while ptr_buffer ~= "" do
       local is_hidden = w.hdata_integer(h_buffer, ptr_buffer, "hidden") == 1
       if not is_hidden or conf.show_hidden_buffers then
          local t = {
             pointer = ptr_buffer,
             number = w.hdata_integer(h_buffer, ptr_buffer, "number"),
-            full_name = w.hdata_string(h_buffer, ptr_buffer, "full_name"),
-            name = w.hdata_string(h_buffer, ptr_buffer, "name"),
-            short_name = w.hdata_string(h_buffer, ptr_buffer, "short_name"),
-            hidden = w.hdata_integer(h_buffer, ptr_buffer, "hidden") == 1,
+            hidden = is_hidden,
             active = w.hdata_integer(h_buffer, ptr_buffer, "active"),
             zoomed = w.hdata_integer(h_buffer, ptr_buffer, "zoomed") == 1,
             merged = false,
@@ -737,10 +741,11 @@ function get_buffer_list()
             g.current_index = index
          end
 
-         if conf.max_name_length > 0 then
-            t.name = string_limit(t.name, conf.max_name_length, conf.char_more)
-            t.full_name = string_limit(t.full_name, conf.max_name_length, conf.char_more)
-            t.short_name = string_limit(t.short_name, conf.max_name_length, conf.char_more)
+         for _, k in pairs(names) do
+            t[k] = w.string_remove_color(w.hdata_string(h_buffer, ptr_buffer, k), "")
+            if conf.max_name_length > 0 then
+               t[k] = string_limit(t[k], conf.max_name_length, conf.char_more)
+            end
          end
 
          if t.var.type == "channel" then
@@ -901,10 +906,13 @@ function generate_output()
       none = conf.rel_char_none
    }
    local pointers = {}
-   local names = { "short_name", "name", "full_name" }
    for i, b in ipairs(buffers) do
       pointers[b.pointer] = i
-      local items = {}
+      local items = {
+         name = b.name,
+         short_name = b.short_name,
+         full_name = b.full_name
+      }
       local colors = {
          delim = c.color_delim,
          rel = c.color_rel,
@@ -950,10 +958,8 @@ function generate_output()
       if not colors.name then
          colors.name = color_highest_lev or colors.base
       end
+      colors.hotlist = color_highest_lev
       colors.short_name, colors.full_name = colors.name, colors.name
-      for _, k in ipairs(names) do
-         items[k] = w.string_remove_color(b[k], "")
-      end
       if items.short_name == "" then
          items.short_name = items.name
       end
