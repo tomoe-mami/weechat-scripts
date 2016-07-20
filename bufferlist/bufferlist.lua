@@ -85,6 +85,11 @@ same_server = buffers within the same server, none = no relation).]],
          value = "+",
          desc = "Characters that will be appended to an item when it's truncated"
       },
+      char_selection = {
+         type = "string",
+         value = " ",
+         desc = "Character that will be used for selection marker."
+      },
       color_number = {
          type = "color",
          value = "green",
@@ -99,6 +104,11 @@ same_server = buffers within the same server, none = no relation).]],
          type = "color",
          value = "white,red",
          desc = "Color for current buffer entry"
+      },
+      color_selected = {
+         type = "color",
+         value = "emphasis",
+         desc = "Color of selected buffer"
       },
       color_other_win = {
          type = "color",
@@ -159,8 +169,11 @@ same_server = buffers within the same server, none = no relation).]],
    config = {},
    max_num_length = 0,
    current_index = 0,
-   buffers = {},
-   buffer_pointers = {},
+   buffers = {
+      list = {},
+      pointers = {}
+   },
+   selection = {},
    hotlist = {
       buffers = {},
       levels = { "low", "message", "private", "highlight" }
@@ -168,8 +181,9 @@ same_server = buffers within the same server, none = no relation).]],
    bar = {},
    colors = {},
    hooks = {},
+   mouse_state = {},
    mouse_keys = {
-      ["@item("..script_name.."):*"] = "hsignal:"..script_name.."_mouse_action",
+      ["@item("..script_name.."):*"] = "hsignal:"..script_name.."_mouse_event",
       ["@item("..script_name.."):*-event-*"] = "hsignal:"..script_name.."_mouse_event"
    }
 }
@@ -224,30 +238,6 @@ function register_hooks()
    lag_hooks()
 
    w.hook_config("plugins.var.lua."..script_name..".*", "config_cb", "")
-   -- w.hook_command_run("/buffer +1", "cmd_switch_buffer_cb", "next")
-   -- w.hook_command_run("/buffer -1", "cmd_switch_buffer_cb", "prev")
-
-   -- w.hook_command(
-   --    script_name,
-   --    "Command helper for bufferlist script",
-
-   --    "switch next|prev|first|last|next_same_group|prev_same_group|"..
-   --    "first_same_group|last_same_group|<index>"..
-   --    " || move <index1> <index2>"..
-   --    " || swap <index1> <index2>"..
-   --    " || close <index1> [<index2>]",
--- [[
--- switch:
--- select:
-  -- move:
-  -- swap:
- -- close:
--- <index*>: Buffer index
--- ]],
-   --    "",
-   --    "command_cb", "")
-
-
 end
 
 function lag_hooks()
@@ -430,7 +420,7 @@ end
 
 function mouse_init()
    w.hook_focus(script_name, "focus_cb", "")
-   w.hook_hsignal(script_name.."_mouse_action", "mouse_action_cb", "")
+   -- w.hook_hsignal(script_name.."_mouse_action", "mouse_action_cb", "")
    w.hook_hsignal(script_name.."_mouse_event", "mouse_event_cb", "")
    w.key_bind("mouse", g.mouse_keys)
 end
@@ -439,69 +429,21 @@ end
 -- be passed to mouse_cb
 function focus_cb(_, t)
    local index = t._bar_item_line + 1
-   if t._bar_name == script_name and g.buffers[index] then
-      for k, v in pairs(g.buffers[index]) do
-         t[k] = v
-      end
+   if t._bar_name == script_name and g.buffers.list[index] then
+      t.pointer = g.buffers.list[index].pointer
+      -- for k, v in pairs(g.buffers[index]) do
+      --    t[k] = v
+      -- end
    end
    return t
 end
 
-function mouse_action_cb(_, _, t)
-   if t._key == "button1" then
-      if t._bar_item_line == t._bar_item_line2 then
-         w.buffer_set(t.pointer, "display", "1")
-         return w.WEECHAT_RC_OK
-      end
-   end
-   return w.WEECHAT_RC_OK
-end
-
 function mouse_event_cb(_, _, t)
-   -- dump_keys(t)
    return w.WEECHAT_RC_OK
-end
-
-function dump_keys(t)
-   local ptr_buffer = w.buffer_search("lua", script_name.."_keys")
-   if ptr_buffer == "" then
-      ptr_buffer = w.buffer_new(script_name.."_keys", "", "", "", "")
-      if ptr_buffer == "" then
-         return
-      end
-      w.buffer_set(ptr_buffer, "type", "free")
-      w.buffer_set(ptr_buffer, "title", script_name)
-      w.buffer_set(ptr_buffer, "clear", "0")
-      w.buffer_set(ptr_buffer, "display", "1")
-   end
-   local cols = { {}, {} }
-   local width = { 0, 0 }
-   for k, v in pairs(t) do
-      if not k:match("_localvar_") and not k:match("_chat") then
-         local i = k:sub(-1) == "2" and 2 or 1
-         local line = string.format("%s = %q", k, v)
-         if #line > width[i] then
-            width[i] = #line
-         end
-         table.insert(cols[i], line)
-      end
-   end
-   table.sort(cols[1])
-   table.sort(cols[2])
-   local total_lines = #cols[2] > #cols[1] and #cols[2] or #cols[1]
-
-   w.buffer_clear(ptr_buffer)
-   for i = 1, total_lines do
-      w.print_y(ptr_buffer,
-                i - 1,
-                string.format("%-"..width[1].."s %-"..width[2].."s",
-                              cols[1][i] or "",
-                              cols[2][i] or ""))
-   end
 end
 
 function rebuild_cb(_, signal_name, ptr_buffer)
-   g.buffers, g.buffer_pointers, g.max_num_length = get_buffer_list()
+   g.buffers, g.max_num_length = get_buffer_list()
    w.bar_item_update(script_name)
    if signal_name == "script_init" then
       w.hook_timer(50, 0, 1, "autoscroll", "now")
@@ -518,29 +460,29 @@ function regroup_by_server(own_index, buffer, new_var)
       buffer.var.server == new_var.server then
       return
    end
-   local buffers, pointers = g.buffers, g.buffer_pointers
+   local buffers = g.buffers
    local server_index
    if w.buffer_get_string(buffer.pointer, "plugin") == "irc" then
       server_buffer = w.info_get("irc_buffer", new_var.server)
-      server_index = pointers[server_buffer]
+      server_index = buffers.pointers[server_buffer]
    elseif new_var.type == "server" then
       server_index = own_index
    else
-      for i, row in ipairs(buffers) do
+      for i, row in ipairs(buffers.list) do
          if row.var.type == "server" and row.var.server == new_var.server then
             server_index = i
             break
          end
       end
    end
-   if not server_index or not buffers[server_index] then
+   if not server_index or not buffers.list[server_index] then
       return
    end
    local pos = 0
-   for i = server_index, #buffers do
+   for i = server_index, #buffers.list do
       pos = i
-      if buffers[i].var.server ~= new_var.server or
-         buffers[i].number > buffer.number then
+      if buffers.list[i].var.server ~= new_var.server or
+         buffers.list[i].number > buffer.number then
          break
       end
    end
@@ -549,11 +491,11 @@ function regroup_by_server(own_index, buffer, new_var)
          buffer.rel = ""
       else
          if pos ~= own_index then
-            pointers[buffer.pointer] = pos
-            table.insert(buffers, pos, buffer)
-            table.remove(buffers, own_index + 1)
+            buffers.pointers[buffer.pointer] = pos
+            table.insert(buffers.list, pos, buffer)
+            table.remove(buffers.list, own_index + 1)
          end
-         local next_buffer, prev_buffer = buffers[pos+1], buffers[pos-1]
+         local next_buffer, prev_buffer = buffers.list[pos+1], buffers.list[pos-1]
          if next_buffer and next_buffer.var.server == new_var.server then
             buffer.rel = "middle"
          else
@@ -611,7 +553,7 @@ end
 function prop_changed_cb(_, signal_name, ptr)
    local current_buffer = w.current_buffer()
    local h_buffer = w.hdata_get("buffer")
-   for i, row in ipairs(g.buffers) do
+   for i, row in ipairs(g.buffers.list) do
       row.displayed = w.buffer_get_integer(row.pointer, "num_displayed") > 0
       row.current = row.pointer == current_buffer
       row.zoomed = w.buffer_get_integer(row.pointer, "zoomed") == 1
@@ -700,9 +642,9 @@ function get_irc_server(server_name)
 end
 
 function get_buffer_by_pointer(ptr_buffer)
-   local index = g.buffer_pointers[ptr_buffer]
+   local index = g.buffers.pointers[ptr_buffer]
    if index then
-      return g.buffers[index], index
+      return g.buffers.list[index], index
    end
 end
 
@@ -809,7 +751,7 @@ function get_buffer_list()
       entries, pointers = group_by_server(entries, groups, pointers)
    end
 
-   return entries, pointers, max_num_len
+   return { list = entries, pointers = pointers }, max_num_len
 end
 
 function group_by_server(entries, groups)
@@ -884,14 +826,14 @@ end
 
 function generate_output()
    local buffers = g.buffers
-   if not buffers then
+   if not buffers.list then
       return ""
    end
-   local total_entries = #buffers
+   local total_entries = #buffers.list
    if total_entries == 0 then
       return ""
    end
-   local hl, conf, c = g.hotlist, g.config, g.colors
+   local hl, conf, c, sel = g.hotlist, g.config, g.colors, g.selection
    local num_fmt, idx_fmt
    if conf.align_number ~= "none" then
       local minus = conf.align_number == "left" and "-" or ""
@@ -905,9 +847,11 @@ function generate_output()
       ["end"] = conf.rel_char_end,
       none = conf.rel_char_none
    }
-   local pointers = {}
-   for i, b in ipairs(buffers) do
-      pointers[b.pointer] = i
+   local sel_phold
+   if conf.char_selection ~= "" then
+      sel_phold = string.rep(" ", w.strlen_screen(conf.char_selection))
+   end
+   for i, b in ipairs(buffers.list) do
       local items = {
          name = b.name,
          short_name = b.short_name,
@@ -921,6 +865,8 @@ function generate_output()
       }
       if b.current then
          colors.base = c.color_current
+      elseif sel[b.pointer] and not sel_phold then
+         colors.base = c.color_selected
       elseif b.displayed and b.active > 0 then
          colors.base = c.color_other_win
       elseif b.zoomed and b.active == 0 then
@@ -976,8 +922,15 @@ function generate_output()
          colors.lag = c.color_lag
       end
 
+      if sel[b.pointer] then
+         items.sel = conf.char_selection
+         colors.sel = c.color_selected
+      elseif sel_phold then
+         items.sel = sel_phold
+      end
+
       local entry = replace_format(conf.format, items, b.var, colors, conf.char_more)
-      buffers[i].length = w.strlen_screen(entry)
+      buffers.list[i].length = w.strlen_screen(entry)
       if b.current then
          entry = c.color_current..strip_bg_color(entry)
       end
@@ -996,7 +949,7 @@ function scroll_bar_area(t)
 
    if t.fill == "horizontal" then
       local visible_chars = width * height
-      local buffers, length_before = g.buffers, 0
+      local buffers, length_before = g.buffers.list, 0
       for i = 1, t.offset do
          length_before = length_before + (buffers[i].length or 0) + 1
       end
@@ -1119,30 +1072,6 @@ end
 function item_cb()
    return generate_output()
 end
-
--- function command_cb(_, ptr_buffer, param)
---    return w.WEECHAT_RC_OK
--- end
-
--- function cmd_switch_buffer_cb(dir)
---    local idx, total = g.current_index, #g.buffers
---    if dir == "next" then
---       idx = idx + 1
---    elseif dir == "prev" then
---       idx = idx - 1
---    end
---    if idx < 1 then
---       idx = total
---    elseif idx > total then
---       idx = 1
---    end
---    local buf = g.buffers[idx]
---    if buf then
---       w.buffer_set(buf.pointer, "display", "1")
---       return w.WEECHAT_RC_OK_EAT
---    end
---    return w.WEECHAT_RC_OK
--- end
 
 function unload_cb()
    for key, _ in pairs(g.mouse_keys) do
