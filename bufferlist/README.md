@@ -34,10 +34,9 @@ See also option **rel_char_start**, **rel_char_middle**, **rel_char_end**, and
 
 #### plugins.var.lua.bufferlist.always_show_number
 
-When **relation** mode is set to `merged` (the default), only the first entry of 
-merged buffers will have its number shown. Enable this option to show the number
-of all entries. If relation mode is set to other value, this option will have no
-effect since the number will always be shown.
+By default if there are multiple consecutive buffers with the same number, only
+the first one will have its number shown. Enable this option to make the number
+always visible.
 
 #### plugins.var.lua.bufferlist.show_hidden_buffers
 
@@ -50,7 +49,10 @@ If enabled, you can use item `lag` in option **format**.
 #### plugins.var.lua.bufferlist.rel_char_(start|middle|end|none)
 
 Characters that will be displayed in item `rel` for indicating the
-position of related buffers. For example, if you want to have tree-like display:
+position of related buffers. `rel_char_none` is for buffers that are not
+related.
+
+For example, if you want to have tree-like display:
 
     /set plugins.var.lua.bufferlist.rel_char_start  "┌"
     /set plugins.var.lua.bufferlist.rel_char_middle "├─"

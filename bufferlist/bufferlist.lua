@@ -21,9 +21,8 @@ the value of local variable "type")]]
       },
       always_show_number = {
          type = "boolean",
-         value = "on",
-         desc = [[If this option is enabled and option `relation` is set to merged
-(the default), merged buffers will always have their numbers shown.]]
+         value = "off",
+         desc = "Always show buffer number"
       },
       show_hidden_buffers = {
          type = "boolean",
@@ -221,19 +220,19 @@ function register_hooks()
       w.hook_signal("9000|"..name, "rebuild_cb", "")
    end
 
-   for _, name in ipairs({
-      "buffer_switch", "buffer_zoomed", "buffer_unzoomed", "window_switch",
-      "window_opened", "window_closing"}) do
-      w.hook_signal("9000|"..name, "prop_changed_cb", "")
-   end
-
+   w.hook_signal("9000|window_switch", "window_cb", "")
+   w.hook_signal("9000|window_opened", "window_cb", "")
+   w.hook_signal("9000|window_closing", "window_cb", "")
+   w.hook_signal("9000|buffer_switch", "switch_cb", "")
    w.hook_signal("9000|buffer_renamed", "renamed_cb", "")
    w.hook_signal("9000|buffer_localvar_*", "localvar_changed_cb", "")
+   w.hook_signal("9000|buffer_zoomed", "zoom_cb", "")
+   w.hook_signal("9000|buffer_unzoomed", "zoom_cb", "")
    w.hook_signal("9000|signal_sigwinch", "redraw_cb", "")
    w.hook_signal("9000|hotlist_changed", "hotlist_cb", "")
+   w.hook_signal("9000|nicklist_nick_removed", "nicklist_cb", "")
    w.hook_hsignal("9000|nicklist_nick_added", "nicklist_cb", "")
    w.hook_hsignal("9000|nicklist_nick_changed", "nicklist_cb", "")
-   w.hook_signal("9000|nicklist_nick_removed", "nicklist_cb", "")
 
    lag_hooks()
 
@@ -550,18 +549,72 @@ function renamed_cb(_, _, ptr_buffer)
    return w.WEECHAT_RC_OK
 end
 
-function prop_changed_cb(_, signal_name, ptr)
-   local current_buffer = w.current_buffer()
-   local h_buffer = w.hdata_get("buffer")
-   for i, row in ipairs(g.buffers.list) do
-      row.displayed = w.buffer_get_integer(row.pointer, "num_displayed") > 0
-      row.current = row.pointer == current_buffer
-      row.zoomed = w.buffer_get_integer(row.pointer, "zoomed") == 1
-      row.active = w.buffer_get_integer(row.pointer, "active")
-      row.hidden = w.buffer_get_integer(row.pointer, "hidden") == 1
-      if row.current then
-         g.current_index = i
+function switch_cb(_, _, ptr_buffer)
+   local buffer, index = get_buffer_by_pointer(ptr_buffer)
+   if buffer then
+      local h_buffer = w.hdata_get("buffer")
+      buffer.current = true
+      buffer.displayed = true
+      buffer.active = w.hdata_integer(h_buffer, ptr_buffer, "active")
+      g.current_index = index
+      local ptr_prev = w.hdata_get_list(h_buffer, "gui_buffer_last_displayed")
+      if ptr_prev ~= "" then
+         local prev_buffer = get_buffer_by_pointer(ptr_prev)
+         if prev_buffer then
+            prev_buffer.current = false
+            prev_buffer.displayed = w.hdata_integer(h_buffer, ptr_prev, "num_displayed") > 0
+            prev_buffer.active = w.hdata_integer(h_buffer, ptr_prev, "active")
+         end
       end
+      if buffer.merged then
+         return zoom_cb(nil, "zoom_switch_active", ptr_buffer)
+      end
+      w.bar_item_update(script_name)
+      autoscroll("now")
+   end
+   return w.WEECHAT_RC_OK
+end
+
+function window_cb(_, signal, ptr_win)
+   local ptr_buffer = w.window_get_pointer(ptr_win, "buffer")
+   local buffer, index = get_buffer_by_pointer(ptr_buffer)
+   if buffer then
+      if signal == "window_opened" then
+         buffer.displayed = true
+      elseif signal == "window_closing" then
+         buffer.displayed = w.buffer_get_integer(ptr_buffer, "num_displayed") > 2
+      end
+      g.buffers.list[g.current_index].current = false
+      buffer.current = true
+      g.current_index = index
+      w.bar_item_update(script_name)
+      autoscroll("now")
+   end
+   return w.WEECHAT_RC_OK
+end
+
+function zoom_cb(_, signal, ptr_buffer)
+   local ptr_current = w.current_buffer()
+   local buffer = get_buffer_by_pointer(ptr_buffer)
+   if not buffer then
+      return w.WEECHAT_RC_OK
+   end
+   local h_buffer = w.hdata_get("buffer")
+   local ptr_merged = w.hdata_search(
+      h_buffer,
+      w.hdata_get_list(h_buffer, "gui_buffers"),
+      "${buffer.number} == "..buffer.number, 1)
+   while ptr_merged ~= "" do
+      if w.hdata_integer(h_buffer, ptr_merged, "number") ~= buffer.number then
+         break
+      end
+      local row = get_buffer_by_pointer(ptr_merged)
+      if row then
+         row.current = ptr_merged == ptr_current
+         row.zoomed = w.hdata_integer(h_buffer, ptr_merged, "zoomed") == 1
+         row.active = w.hdata_integer(h_buffer, ptr_merged, "active")
+      end
+      ptr_merged = w.hdata_pointer(h_buffer, ptr_merged, "next_buffer")
    end
 
    w.bar_item_update(script_name)
@@ -651,11 +704,13 @@ end
 function get_buffer_list()
    local entries, groups, conf = {}, {}, g.config
    local pointers = {}
-   local index, max_num_len = 0, 0
+   local index, prev_index, max_num_len = 0, 0, 0
    local current_buffer = w.current_buffer()
    local h_buffer, h_nick = w.hdata_get("buffer"), w.hdata_get("nick")
    local ptr_buffer = w.hdata_get_list(h_buffer, "gui_buffers")
    local names = { "name", "short_name", "full_name" }
+   local num_list = {}
+   local prev_number = 0
    while ptr_buffer ~= "" do
       local is_hidden = w.hdata_integer(h_buffer, ptr_buffer, "hidden") == 1
       if not is_hidden or conf.show_hidden_buffers then
@@ -677,11 +732,30 @@ function get_buffer_list()
             max_num_len = num_len
          end
 
-         index = index + 1
+         prev_index, index = index, index + 1
          pointers[ptr_buffer] = index
          if t.current then
             g.current_index = index
          end
+
+         if index > 1 then
+            if t.number == prev_number then
+               if not entries[prev_index].merged then
+                  entries[prev_index].merged = true
+                  if conf.relation == "merged" then
+                     entries[prev_index].rel = "start"
+                  end
+               end
+               t.merged = true
+               if conf.relation == "merged" then
+                  t.rel = "middle"
+               end
+            elseif entries[prev_index].merged and conf.relation == "merged" then
+               entries[prev_index].rel = "end"
+            end
+         end
+
+         prev_number = t.number
 
          for _, k in pairs(names) do
             t[k] = w.string_remove_color(w.hdata_string(h_buffer, ptr_buffer, k), "")
@@ -704,39 +778,16 @@ function get_buffer_list()
             end
          end
 
-         if conf.relation == "same_server" then
-            if (t.var.type == "server" or
-                t.var.type == "channel" or
-                t.var.type == "private") and
-                t.var.server and
-                t.var.server ~= "" then
-
-               if not groups[t.var.server] then
-                  groups[t.var.server] = {}
-               end
-               if t.var.type == "server" then
-                  table.insert(groups[t.var.server], 1, index)
-               else
-                  table.insert(groups[t.var.server], index)
-               end
-
+         if conf.relation == "same_server" and
+            t.var.server and t.var.server ~= "" and
+            (t.var.type == "server" or t.var.type == "channel" or t.var.type == "private") then
+            if not groups[t.var.server] then
+               groups[t.var.server] = {}
             end
-         elseif conf.relation == "merged" then
-            if not groups[t.number] then
-               groups[t.number] = index
-               local before = index - 1
-               if entries[before] and entries[before].merged then
-                  entries[before].rel = "end"
-               end
+            if t.var.type == "server" then
+               table.insert(groups[t.var.server], 1, index)
             else
-               if type(groups[t.number]) ~= "table" then
-                  entries[ groups[t.number] ].merged = true
-                  entries[ groups[t.number] ].rel = "start"
-                  groups[t.number] = { groups[t.number] }
-               end
-               t.merged = true
-               t.rel = "middle"
-               table.insert(groups[t.number], index)
+               table.insert(groups[t.var.server], index)
             end
          end
 
@@ -851,6 +902,7 @@ function generate_output()
    if conf.char_selection ~= "" then
       sel_phold = string.rep(" ", w.strlen_screen(conf.char_selection))
    end
+   local prev_number = 0
    for i, b in ipairs(buffers.list) do
       local items = {
          name = b.name,
@@ -877,9 +929,10 @@ function generate_output()
 
       items.rel = rels[b.rel] or rels.none
       items.number = b.number
-      if not conf.always_show_number and b.merged and b.rel ~= "start" then
+      if not conf.always_show_number and prev_number == b.number then
          items.number = ""
       end
+      prev_number = b.number
       items.index = idx_fmt and idx_fmt:format(i) or i
       colors.index, colors.number = c.color_number, c.color_number
       if num_fmt then
