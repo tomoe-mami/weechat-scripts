@@ -222,7 +222,7 @@ function register_hooks()
 
    w.hook_signal("9000|window_switch", "window_cb", "")
    w.hook_signal("9000|window_opened", "window_cb", "")
-   w.hook_signal("9000|window_closing", "window_cb", "")
+   w.hook_signal("9000|window_closed", "window_cb", "")
    w.hook_signal("9000|buffer_switch", "switch_cb", "")
    w.hook_signal("9000|buffer_renamed", "renamed_cb", "")
    w.hook_signal("9000|buffer_localvar_*", "localvar_changed_cb", "")
@@ -556,19 +556,13 @@ function switch_cb(_, _, ptr_buffer)
       buffer.current = true
       buffer.displayed = true
       buffer.active = w.hdata_integer(h_buffer, ptr_buffer, "active")
+      local prev = g.buffers.list[g.current_index]
+      if prev then
+         prev.current = false
+         prev.displayed = w.buffer_get_integer(prev.pointer, "num_displayed") > 0
+         prev.active = w.buffer_get_integer(prev.pointer, "active")
+      end
       g.current_index = index
-      local ptr_prev = w.hdata_get_list(h_buffer, "gui_buffer_last_displayed")
-      if ptr_prev ~= "" then
-         local prev_buffer = get_buffer_by_pointer(ptr_prev)
-         if prev_buffer then
-            prev_buffer.current = false
-            prev_buffer.displayed = w.hdata_integer(h_buffer, ptr_prev, "num_displayed") > 0
-            prev_buffer.active = w.hdata_integer(h_buffer, ptr_prev, "active")
-         end
-      end
-      if buffer.merged then
-         return zoom_cb(nil, "zoom_switch_active", ptr_buffer)
-      end
       w.bar_item_update(script_name)
       autoscroll("now")
    end
@@ -579,14 +573,21 @@ function window_cb(_, signal, ptr_win)
    local ptr_buffer = w.window_get_pointer(ptr_win, "buffer")
    local buffer, index = get_buffer_by_pointer(ptr_buffer)
    if buffer then
-      if signal == "window_opened" then
-         buffer.displayed = true
-      elseif signal == "window_closing" then
-         buffer.displayed = w.buffer_get_integer(ptr_buffer, "num_displayed") > 2
-      end
       g.buffers.list[g.current_index].current = false
-      buffer.current = true
-      g.current_index = index
+      if signal == "window_opened" or signal == "window_switch" then
+         buffer.displayed = true
+         buffer.current = true
+         g.current_index = index
+      elseif signal == "window_closed" then
+         buffer.displayed = w.buffer_get_integer(ptr_buffer, "num_displayed") > 0
+         ptr_buffer = w.window_get_pointer(w.current_window(), "buffer")
+         buffer, index = get_buffer_by_pointer(ptr_buffer)
+         if buffer then
+            buffer.displayed = true
+            buffer.current = true
+            g.current_index = index
+         end
+      end
       w.bar_item_update(script_name)
       autoscroll("now")
    end
@@ -594,11 +595,11 @@ function window_cb(_, signal, ptr_win)
 end
 
 function zoom_cb(_, signal, ptr_buffer)
-   local ptr_current = w.current_buffer()
    local buffer = get_buffer_by_pointer(ptr_buffer)
    if not buffer then
       return w.WEECHAT_RC_OK
    end
+   local ptr_current = w.current_buffer()
    local h_buffer = w.hdata_get("buffer")
    local ptr_merged = w.hdata_search(
       h_buffer,
