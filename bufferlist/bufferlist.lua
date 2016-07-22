@@ -1,4 +1,4 @@
-w, script_name, table.unpack = weechat, "bufferlist", table.unpack or unpack
+w, script_name = weechat, "bufferlist"
 
 g = {
    -- we really should use our own config file
@@ -11,7 +11,7 @@ Format of buffer entry. The syntax is a bit similar with bar items except a
 comma won't add extra space and '+' is used to apply color of item to the
 characters around it. Available item names are: number, short_name, name,
 full_name, hotlist, nick_prefix, lag, rel, index. You can also insert buffer's
-local variable by prefixing the name with backslash (eg: \type will insert
+local variable by prefixing the name with '%' (eg: %type will insert
 the value of local variable "type")]]
       },
       bar_name = {
@@ -180,10 +180,11 @@ same_server = buffers within the same server, none = no relation).]],
    bar = {},
    colors = {},
    hooks = {},
-   mouse_state = {},
-   mouse_keys = {
-      ["@item("..script_name.."):*"] = "hsignal:"..script_name.."_mouse_event",
-      ["@item("..script_name.."):*-event-*"] = "hsignal:"..script_name.."_mouse_event"
+   mouse = {
+      keys = {
+         ["@item("..script_name.."):*"] = "hsignal:"..script_name.."_mouse_event",
+         ["@item("..script_name.."):*-event-*"] = "hsignal:"..script_name.."_mouse_event"
+      }
    }
 }
 
@@ -195,9 +196,7 @@ function main()
    if reg then
       local wee_ver = tonumber(w.info_get("version_number", "")) or 0
       if wee_ver < 0x01000000 then
-         w.print("", string.format("%sScript %s.lua requires WeeChat >= 1.0",
-                                   w.prefix("error"),
-                                   script_name))
+         print("Error: This script requires WeeChat >= 1.0")
          w.command("", "/wait 3ms /lua unload "..script_name)
          return
       end
@@ -419,25 +418,68 @@ end
 
 function mouse_init()
    w.hook_focus(script_name, "focus_cb", "")
-   -- w.hook_hsignal(script_name.."_mouse_action", "mouse_action_cb", "")
    w.hook_hsignal(script_name.."_mouse_event", "mouse_event_cb", "")
-   w.key_bind("mouse", g.mouse_keys)
+   w.key_bind("mouse", g.mouse.keys)
 end
 
 -- when a mouse event occurred, focus_cb are called first and the returned table will
 -- be passed to mouse_cb
 function focus_cb(_, t)
-   local index = t._bar_item_line + 1
-   if t._bar_name == script_name and g.buffers.list[index] then
-      t.pointer = g.buffers.list[index].pointer
-      -- for k, v in pairs(g.buffers[index]) do
-      --    t[k] = v
-      -- end
+   if t._bar_item_name == script_name then
+      local k1, k2 = t._key:sub(1, -12), t._key:sub(-11)
+      if k2 == "-event-down" then
+         t.mode, t.key = "init", k1
+      elseif k2 == "-event-drag" then
+         t.mode, t.key = "drag", k1
+      else
+         t.mode, t.key = "action", t._key
+      end
+      local index = t._bar_item_line + 1
+      local buffer = g.buffers.list[index]
+      if buffer then
+         t.pointer = buffer.pointer
+         t.number = buffer.number
+      end
    end
    return t
 end
 
 function mouse_event_cb(_, _, t)
+   if t.mode == "init" then
+      g.mouse.drag = false
+      if t.key == "button1" then
+         return cmd_selection("add", t.pointer)
+      elseif t.key == "button2" then
+         return cmd_selection("delete", t.pointer)
+      end
+   elseif t.mode == "drag" then
+      g.mouse.drag = true
+      if t.key == "button1" then
+         return cmd_selection("add", t.pointer2)
+      elseif t.key == "button2" then
+         return cmd_selection("delete", t.pointer2)
+      elseif t.key == "ctrl-button1" then
+         return cmd_move(t)
+      end
+   else
+      if t.key == "button1" then
+         if not g.mouse.drag then
+            return cmd_switch(t.pointer)
+         end
+      elseif t.key == "button3" then
+         return cmd_merge()
+      elseif t.key == "ctrl-button2" then
+         return cmd_selection("clear")
+      elseif t.key:match("^ctrl%-button1") then
+         if g.mouse.temp_select then
+            g.mouse.temp_select = nil
+            cmd_selection("clear")
+         end
+         if g.mouse.last_event then
+            g.mouse.last_event = nil
+         end
+      end
+   end
    return w.WEECHAT_RC_OK
 end
 
@@ -1123,12 +1165,134 @@ function autoscroll(mode)
    end
 end
 
+function get_selection()
+   local sel, buffers = g.selection, g.buffers
+   local t = {}
+   for ptr, _ in pairs(sel) do
+      local i = buffers.pointers[ptr]
+      local buffer = buffers.list[i]
+      if i and buffer then
+         buffer.index = i
+         table.insert(t, buffer)
+      end
+   end
+   if #t > 0 then
+      table.sort(t, function (a, b) return a.index < b.index end)
+   end
+   return t
+end
+
+function cmd_selection(param, ptr_buffer)
+   if param == "clear" then
+      g.selection = {}
+   else
+      local sel = g.selection
+      if not param or param == "add" then
+         sel[ptr_buffer] = true
+      elseif param == "delete" then
+         sel[ptr_buffer] = false
+      elseif param == "toggle" then
+         sel[ptr_buffer] = not sel[ptr_buffer]
+      end
+   end
+   w.bar_item_update(script_name)
+   return w.WEECHAT_RC_OK
+end
+
+function cmd_merge()
+   local sel = get_selection()
+   if #sel < 2 then
+      print("Error: You must select at least 2 buffers first before you can use the merge command")
+      return w.WEECHAT_RC_ERROR
+   end
+   local first = table.remove(sel, 1)
+   for _, entry in ipairs(sel) do
+      w.buffer_merge(entry.pointer, first.pointer)
+   end
+   return w.WEECHAT_RC_OK
+end
+
+function cmd_switch(ptr_buffer)
+   cmd_selection("clear")
+   w.buffer_set(ptr_buffer, "display", "1")
+   return w.WEECHAT_RC_OK
+end
+
+function cmd_move(t)
+   if not t._bar_item_name2 or t._bar_item_name2 ~= script_name then
+      return w.WEECHAT_RC_OK
+   end
+   local target_num = tonumber(t.number2)
+   if not target_num or target_num < 1 then
+      return w.WEECHAT_RC_OK
+   end
+   local sel = get_selection()
+   local total = #sel
+   if total == 0 then
+      cmd_selection("add", t.pointer)
+      g.mouse.temp_select = true
+      total = 1
+   end
+
+   local line_start
+   if total > 1 then
+      local last = g.mouse.last_event
+      if last then
+         line_start = tonumber(last._bar_item_line2)
+      end
+   end
+   if not line_start then
+      line_start = tonumber(t._bar_item_line)
+   end
+   local line_end = tonumber(t._bar_item_line2)
+   local dist = line_end - line_start
+   if dist == 0 then
+      return w.WEECHAT_RC_OK
+   end
+   local num_end = target_num + total - 1
+   local h_buffer = w.hdata_get("buffer")
+   local last_buffer = w.hdata_get_list(h_buffer, "last_gui_buffer")
+   local last_num = w.hdata_integer(h_buffer, last_buffer, "number")
+   if num_end > last_num then
+      num_end = last_num
+   end
+   local p1, p2, p3, n
+   if dist < 0 then
+      p1, p2, p3, n = 1, total, 1, target_num
+   else
+      p1, p2, p3, n = total, 1, -1, num_end
+   end
+   for i = p1, p2, p3 do
+      local buffer = sel[i]
+      w.buffer_set(buffer.pointer, "number", n)
+      n = n + p3
+   end
+   g.mouse.last_event = t
+   return w.WEECHAT_RC_OK
+end
+
+function cmd_close()
+   local sel = get_selection()
+   for _, entry in ipairs(sel) do
+      w.buffer_close(entry.pointer)
+   end
+   return w.WEECHAT_RC_OK
+end
+
+function cmd_set_property(name, value)
+   local sl = get_selection()
+   for _, entry in ipairs(sel) do
+      w.buffer_set(entry.pointer, name, value)
+   end
+   return w.WEECHAT_RC_OK
+end
+
 function item_cb()
    return generate_output()
 end
 
 function unload_cb()
-   for key, _ in pairs(g.mouse_keys) do
+   for key, _ in pairs(g.mouse.keys) do
       w.key_unbind("mouse", key)
    end
    return w.WEECHAT_RC_OK
@@ -1171,7 +1335,7 @@ function check_utf8_support()
       end
    end
    if not utf8 then
-      w.print("", script_name.."\tWarning: Your version of Lua is missing UTF8 support.")
+      print("Warning: Your version of Lua is missing UTF8 support.")
       return
    end
 end
@@ -1204,6 +1368,11 @@ function string_limit(text, limit, char_more)
       end
       return text2
    end
+end
+
+function print(fmt, var)
+   w.print("", script_name.."\t"..
+               w.string_eval_expression(fmt, {}, var or {}, {}))
 end
 
 main()
