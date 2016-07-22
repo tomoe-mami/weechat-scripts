@@ -567,7 +567,7 @@ function localvar_changed_cb(_, signal_name, ptr_buffer)
    local h_buffer = w.hdata_get("buffer")
    local new_var = w.hdata_hashtable(h_buffer, ptr_buffer, "local_variables")
    if conf.relation == "same_server" and buffer.var.server ~= new_var.server then
-      regroup_by_server(index, buffer, new_var)
+      return rebuild_cb(nil, "server_changed", ptr_buffer)
    end
    if buffer.var.type ~= new_var.type and
       new_var.type == "channel" and
