@@ -466,11 +466,16 @@ function mouse_event_cb(_, _, t)
          if not g.mouse.drag then
             return cmd_switch(t.pointer)
          end
-      elseif t.key == "button3" then
-         return cmd_merge()
       elseif t.key == "ctrl-button2" then
          return cmd_selection("clear")
+      elseif t.key == "button3" then
+         return cmd_merge()
+      elseif t.key == "ctrl-button3" then
+         return cmd_unmerge()
       elseif t.key:match("^ctrl%-button1") then
+         if t._bar_item_name2 ~= script_name then
+            cmd_close()
+         end
          if g.mouse.temp_select then
             g.mouse.temp_select = nil
             cmd_selection("clear")
@@ -1185,7 +1190,7 @@ end
 function cmd_selection(param, ptr_buffer)
    if param == "clear" then
       g.selection = {}
-   else
+   elseif ptr_buffer and ptr_buffer ~= "" then
       local sel = g.selection
       if not param or param == "add" then
          sel[ptr_buffer] = true
@@ -1212,9 +1217,19 @@ function cmd_merge()
    return w.WEECHAT_RC_OK
 end
 
+function cmd_unmerge()
+   local sel = get_selection()
+   for _, buffer in ipairs(sel) do
+      w.buffer_unmerge(buffer.pointer, -1)
+   end
+   return w.WEECHAT_RC_OK
+end
+
 function cmd_switch(ptr_buffer)
-   cmd_selection("clear")
-   w.buffer_set(ptr_buffer, "display", "1")
+   if ptr_buffer and ptr_buffer ~= "" then
+      cmd_selection("clear")
+      w.buffer_set(ptr_buffer, "display", "1")
+   end
    return w.WEECHAT_RC_OK
 end
 
@@ -1230,8 +1245,9 @@ function cmd_move(t)
    local total = #sel
    if total == 0 then
       cmd_selection("add", t.pointer)
+      sel = get_selection()
       g.mouse.temp_select = true
-      total = 1
+      total = #sel
    end
 
    local line_start
@@ -1276,6 +1292,7 @@ function cmd_close()
    for _, entry in ipairs(sel) do
       w.buffer_close(entry.pointer)
    end
+   cmd_selection("clear")
    return w.WEECHAT_RC_OK
 end
 

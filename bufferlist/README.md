@@ -2,6 +2,20 @@
 
 Bar for showing list of buffers.
 
+### Mouse actions
+
+Button                              | Action
+------------------------------------|------------------------
+Left click                          | Switch buffer
+Left button, drag                   | Select buffers
+Right button, drag                  | Deselect buffers
+Ctrl-Right click                    | Clear selection
+Ctrl-Left button, drag within list  | Move buffers
+Ctrl-Left button, drag out of list  | Close buffers
+Middle click                        | Merge buffers
+Ctrl-Middle click                   | Unmerge buffers
+
+
 ### Options
 
 #### plugins.var.lua.bufferlist.format
