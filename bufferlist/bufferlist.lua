@@ -1097,7 +1097,7 @@ function scroll_bar_area(t)
          cur_y = math.floor(cur_y / col_count) % col_height
       end
       if cur_y < scroll_y then
-         amount_y = cur_y - scroll_y - 1
+         amount_y = cur_y - scroll_y
       elseif cur_y >= bottom_y then
          amount_y = "+"..cur_y - bottom_y + 1
       end
