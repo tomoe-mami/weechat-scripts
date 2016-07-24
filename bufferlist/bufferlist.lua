@@ -756,7 +756,6 @@ function get_buffer_list()
    local h_buffer, h_nick = w.hdata_get("buffer"), w.hdata_get("nick")
    local ptr_buffer = w.hdata_get_list(h_buffer, "gui_buffers")
    local names = { "name", "short_name", "full_name" }
-   local num_list = {}
    local prev_number = 0
    while ptr_buffer ~= "" do
       local is_hidden = w.hdata_integer(h_buffer, ptr_buffer, "hidden") == 1
@@ -1219,7 +1218,16 @@ end
 function cmd_unmerge()
    local sel = get_selection()
    for _, buffer in ipairs(sel) do
-      w.buffer_unmerge(buffer.pointer, -1)
+      if buffer.merged then
+         local zoomed = buffer.zoomed
+         if zoomed then
+            w.command(buffer.pointer, "/input zoom_merged_buffer")
+         end
+         w.buffer_unmerge(buffer.pointer, -1)
+         if zoomed then
+            w.command(buffer.pointer, "/input zoom_merged_buffer")
+         end
+      end
    end
    return w.WEECHAT_RC_OK
 end
