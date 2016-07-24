@@ -480,7 +480,9 @@ function mouse_event_cb(_, _, t)
             cmd_selection("clear")
          end
       end
-      g.mouse = {}
+      g.mouse.temp_select = nil
+      g.mouse.last_event = nil
+      g.mouse.drag = nil
    end
    return w.WEECHAT_RC_OK
 end
