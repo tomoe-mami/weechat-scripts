@@ -464,26 +464,23 @@ function mouse_event_cb(_, _, t)
    else
       if t.key == "button1" then
          if not g.mouse.drag then
-            return cmd_switch(t.pointer)
+            cmd_switch(t.pointer)
          end
       elseif t.key == "ctrl-button2" then
-         return cmd_selection("clear")
+         cmd_selection("clear")
       elseif t.key == "button3" then
-         return cmd_merge()
+         cmd_merge()
       elseif t.key == "ctrl-button3" then
-         return cmd_unmerge()
+         cmd_unmerge()
       elseif t.key:match("^ctrl%-button1") then
          if t._bar_item_name2 ~= script_name then
             cmd_close()
          end
          if g.mouse.temp_select then
-            g.mouse.temp_select = nil
             cmd_selection("clear")
          end
-         if g.mouse.last_event then
-            g.mouse.last_event = nil
-         end
       end
+      g.mouse = {}
    end
    return w.WEECHAT_RC_OK
 end
