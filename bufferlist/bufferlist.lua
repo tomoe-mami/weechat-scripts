@@ -1,171 +1,6 @@
 w, script_name = weechat, "bufferlist"
 
 g = {
-   -- we really should use our own config file
-   defaults = {
-      format = {
-         type = "string",
-         value = "number ,rel, short_name,(lag), (hotlist)",
-         desc = [[
-Format of buffer entry. The syntax is a bit similar with bar items except a
-comma won't add extra space and '+' is used to apply color of item to the
-characters around it. Available item names are: number, short_name, name,
-full_name, hotlist, nick_prefix, lag, rel, index. You can also insert buffer's
-local variable by prefixing the name with '%' (eg: %type will insert
-the value of local variable "type")]]
-      },
-      bar_name = {
-         type = "string",
-         value = script_name,
-         desc = "The name of bar that will have autoscroll feature"
-      },
-      always_show_number = {
-         type = "boolean",
-         value = "off",
-         desc = "Always show buffer number"
-      },
-      show_hidden_buffers = {
-         type = "boolean",
-         value = "on",
-         desc = "Show hidden buffers"
-      },
-      prefix_not_joined = {
-         type = "string",
-         value = " ",
-         desc = [[Text that will be shown in item `nick_prefix` when you're not
-joined the channel]]
-      },
-      enable_lag_indicator = {
-         type = "boolean",
-         value = "on",
-         desc = [[If enabled, you can use item `lag` in format option to show
-lag indicator]],
-      },
-      max_name_length = {
-         type = "number",
-         value = "0",
-         desc = "Maximum length of buffer name"
-      },
-      align_number = {
-         type = "string",
-         value = "right",
-         choices = { left = true, right = true, none = true },
-         desc = "Align numbers and indexes"
-      },
-      relation = {
-         type = "string",
-         value = "merged",
-         choices = { merged = true, same_server = true, none = true },
-         desc = [[Relation mode between buffers (merged = merged buffers,
-same_server = buffers within the same server, none = no relation).]],
-      },
-      rel_char_start = {
-         type = "string",
-         value = "",
-         desc = "Characters for the first entry in a set of related buffers"
-      },
-      rel_char_end = {
-         type = "string",
-         value = "",
-         desc = "Characters for the last entry in a set of related buffers"
-      },
-      rel_char_middle = {
-         type = "string",
-         value = "",
-         desc = "Characters for the middle entries in a set of related buffers"
-      },
-      rel_char_none = {
-         type = "string",
-         value = "",
-         desc = "Characters for non related buffers"
-      },
-      char_more = {
-         type = "string",
-         value = "+",
-         desc = "Characters that will be appended to an item when it's truncated"
-      },
-      char_selection = {
-         type = "string",
-         value = " ",
-         desc = "Character that will be used for selection marker."
-      },
-      color_number = {
-         type = "color",
-         value = "green",
-         desc = "Color for buffer numbers and indexes"
-      },
-      color_normal = {
-         type = "color",
-         value = "default,default",
-         desc = "Color for normal buffer entry"
-      },
-      color_current = {
-         type = "color",
-         value = "white,red",
-         desc = "Color for current buffer entry"
-      },
-      color_selected = {
-         type = "color",
-         value = "emphasis",
-         desc = "Color of selected buffer"
-      },
-      color_other_win = {
-         type = "color",
-         value = "white,default",
-         desc = "Color for buffers that are displayed in other windows"
-      },
-      color_out_of_zoom = {
-         type = "color",
-         value = "darkgray,default",
-         desc = "Color for merged buffers that are not visible because there's a zoomed buffer"
-      },
-      color_hidden = {
-         type = "color",
-         value = "darkgray,default",
-         desc = "Color for hidden buffers when option `show_hidden_buffers` is enabled"
-      },
-      color_hotlist_low = {
-         type = "color",
-         value = "default",
-         desc = "Color for buffers with hotlist level low (joins, quits, etc)"
-      },
-      color_hotlist_message = {
-         type = "color",
-         value = "yellow",
-         desc = "Color for buffers with hotlist level message (channel conversation)"
-      },
-      color_hotlist_private = {
-         type = "color",
-         value = "lightgreen",
-         desc = "Color for buffers with hotlist level private"
-      },
-      color_hotlist_highlight = {
-         type = "color",
-         value = "magenta",
-         desc = "Color for buffers with hotlist level highlight"
-      },
-      color_rel = {
-         type = "color",
-         value = "default",
-         desc = "Color for rel chars"
-      },
-      color_prefix_not_joined = {
-         type = "color",
-         value = "red",
-         desc = "Color for option prefix_not_joined"
-      },
-      color_delim = {
-         type = "color",
-         value = "bar_delim",
-         desc = "Color for delimiter"
-      },
-      color_lag = {
-         type = "color",
-         value = "default",
-         desc = "Color for lag indicator"
-      }
-   },
-   config = {},
    max_num_length = 0,
    current_index = 0,
    buffers = {
@@ -196,19 +31,286 @@ function main()
    if reg then
       local wee_ver = tonumber(w.info_get("version_number", "")) or 0
       if wee_ver < 0x01000000 then
-         print("Error: This script requires WeeChat >= 1.0")
-         w.command("", "/wait 3ms /lua unload "..script_name)
-         return
+         error("\nError: This script requires WeeChat >= 1.0")
       end
 
       check_utf8_support()
       config_init()
-      bar_init()
       w.bar_item_new(script_name, "item_cb", "")
       update_hotlist()
       rebuild_cb(nil, "script_init", w.current_buffer())
       register_hooks()
       mouse_init()
+   end
+end
+
+function config_init()
+   local conf_file = w.config_new(script_name, "", "")
+   if conf_file == "" then
+      error(string.format("\nError initiating file %s.conf in directory %s",
+                          script_name,
+                          w.info_get("weechat_dir", "")))
+   end
+
+   local sections = {}
+   for _, name in ipairs({"look", "color"}) do
+      sections[name] = w.config_new_section(
+         conf_file, name, 0, 0, "", "", "", "", "", "",
+         "", "", "", "")
+
+      if sections[name] == "" then
+         w.config_free(conf_file)
+         error(string.format("\nError initiating section %s in file %s.conf",
+                             name,
+                             script_name))
+      end
+   end
+
+   local options = {}
+   options.look = config_create_options {
+      file = conf_file,
+      section = sections.look,
+      options = {
+         format = {
+            default = "number ,rel, short_name,(lag), (hotlist)",
+            desc = "Format of buffer entry",
+            change_cb = "redraw_cb"
+         },
+         bar_name = {
+            default = script_name,
+            desc = "The name of bar that will have autoscroll feature",
+            change_cb = "config_bar_cb"
+         },
+         always_show_number = {
+            type = "boolean",
+            default = "off",
+            desc = "Always show buffer number",
+            change_cb = "redraw_cb"
+         },
+         show_hidden_buffers = {
+            type = "boolean",
+            default = "on",
+            desc = "Show hidden buffers",
+            change_cb = "rebuild_cb"
+         },
+         enable_lag_indicator = {
+            type = "boolean",
+            default  = "on",
+            desc = "Enable lag indicator in format",
+            change_cb = "lag_hooks"
+         },
+         prefix_placeholder = {
+            default = " ",
+            desc = "Placeholder for item nick_prefix when you're not in the channel",
+            change_cb = "rebuild_cb"
+         },
+         max_name_length = {
+            type = "integer",
+            default  = "0",
+            min = 0,
+            max = 128,
+            desc = "Maximum length of buffer name (0 = no limit)",
+            change_cb = "rebuild_cb"
+         },
+         align_number = {
+            type = "integer",
+            default  = "right",
+            enum = { "left", "right", "none" },
+            desc = "Alignment of numbers and indexes",
+            change_cb = "redraw_cb"
+         },
+         relation = {
+            type = "integer",
+            default  = "merged",
+            enum = { "merged", "same_server", "none" },
+            desc = "Relation mode of buffers",
+            change_cb = "rebuild_cb"
+         },
+         rel_char_start = {
+            default = "",
+            desc = "Text of item `rel` for the first related buffer",
+            change_cb = "redraw_cb"
+         },
+         rel_char_end = {
+            default = "",
+            desc = "Text of item `rel` for the last related buffer",
+            change_cb = "redraw_cb"
+         },
+         rel_char_middle = {
+            default = "",
+            desc = "Text of item `rel` for related buffers in the middle",
+            change_cb = "redraw_cb"
+         },
+         rel_char_none = {
+            default = "",
+            desc = "Text of item `rel` for non-related buffers",
+            change_cb = "redraw_cb"
+         },
+         char_more = {
+            default = "+",
+            desc = "Text added to buffer name when it is truncated",
+            change_cb = "rebuild_cb"
+         },
+         char_selection = {
+            default = "",
+            desc = "Selection marker character (for item `sel`)",
+            change_cb = "redraw_cb"
+         }
+      }
+   }
+
+   options.color = config_create_options {
+      file = conf_file,
+      section = sections.color,
+      options = {
+         number = {
+            default = "green",
+            desc = "Color for buffer numbers and indexes",
+            change_cb = "config_color_cb"
+         },
+         normal = {
+            default = "default,default",
+            desc = "Color for normal buffer entry",
+            change_cb = "config_color_cb"
+         },
+         current = {
+            default = "white,red",
+            desc = "Color for current buffer entry",
+            change_cb = "config_color_cb"
+         },
+         selected = {
+            default  = "emphasis",
+            desc = "Color of selected buffer",
+            change_cb = "config_color_cb"
+         },
+         other_win = {
+            default = "white,default",
+            desc = "Color for buffers that are displayed in other windows",
+            change_cb = "config_color_cb"
+         },
+         out_of_zoom = {
+            default = "darkgray,default",
+            desc = "Color for merged buffers that are not visible because there's a zoomed buffer",
+            change_cb = "config_color_cb"
+         },
+         hidden = {
+            default = "darkgray,default",
+            desc = "Color for hidden buffers",
+            change_cb = "config_color_cb"
+         },
+         hotlist_low = {
+            default = "default",
+            desc = "Color for buffers with hotlist level low (joins, quits, etc)",
+            change_cb = "config_color_cb"
+         },
+         hotlist_message = {
+            default = "yellow",
+            desc = "Color for buffers with hotlist level message (channel conversation)",
+            change_cb = "config_color_cb"
+         },
+         hotlist_private = {
+            value = "lightgreen",
+            desc = "Color for buffers with hotlist level private",
+            change_cb = "config_color_cb"
+         },
+         hotlist_highlight = {
+            value = "magenta",
+            desc = "Color for buffers with hotlist level highlight",
+            change_cb = "config_color_cb"
+         },
+         rel = {
+            value = "default",
+            desc = "Color for rel chars",
+            change_cb = "config_color_cb"
+         },
+         prefix_placeholder = {
+            value = "red",
+            desc = "Color for option prefix_placeholder",
+            change_cb = "config_color_cb"
+         },
+         delim = {
+            value = "bar_delim",
+            desc = "Color for delimiter",
+            change_cb = "config_color_cb"
+         },
+         lag = {
+            value = "default",
+            desc = "Color for lag indicator",
+            change_cb = "config_color_cb"
+         }
+      }
+   }
+
+   w.config_read(conf_file)
+
+   g.config_file = conf_file
+   g.config_sections = sections
+   g.options = options
+
+   local cur_val = w.config_string(options.look.bar_name)
+   local default = w.config_string_default(options.look.bar_name)
+   if cur_val == default then
+      config_bar_cb(nil, options.look.bar_name)
+   end
+   g.colors = config_load_colors(options.color)
+
+   return true
+end
+
+function config_create_options(data)
+   local tb_option = {}
+   for name, t in pairs(data.options) do
+      t.default = t.default or ""
+      t.value = t.value or t.default
+      tb_option[name] = w.config_new_option(
+         data.file,
+         data.section,
+         name,
+         t.type or "string",
+         string.gsub(t.desc or "", "\n", " "),
+         t.enum and table.concat(t.enum, "|") or "",
+         t.min or 0,
+         t.max or 0,
+         t.default,
+         t.value,
+         t.allow_null and 1 or 0,
+         t.check_cb or "",
+         t.check_cb_arg or "",
+         t.change_cb or "",
+         t.change_cb_arg or "",
+         t.delete_cb or "",
+         t.delete_cb_arg or "")
+   end
+   return tb_option
+end
+
+function config_color_cb(_, ptr_opt)
+   local h_opt = w.hdata_get("config_option")
+   local name = w.hdata_string(h_opt, ptr_opt, "name")
+   g.colors[name] = w.color(w.config_string(ptr_opt))
+end
+
+function config_load_colors(list)
+   local colors = {}
+   for name, ptr_opt in pairs(list) do
+      colors[name] = w.color(w.config_string(ptr_opt))
+   end
+   return colors
+end
+
+function config_bar_cb(_, ptr_opt)
+   local bar_name = w.config_string(ptr_opt)
+   local ptr_bar = w.bar_search(bar_name)
+   if ptr_bar == "" then
+      ptr_bar = w.bar_new(
+         bar_name, "off", 100, "root", "", "left", "columns_vertical", "vertical",
+         0, 20, "default", "cyan", "default", "on", script_name)
+   else
+      local opt_name = "weechat.bar."..bar_name..".items"
+      local opt_items = w.config_string(w.config_get(opt_name))
+      if opt_items ~= script_name then
+         w.print("", "Warning: Auto-scroll has been disabled")
+      end
    end
 end
 
@@ -235,12 +337,12 @@ function register_hooks()
 
    lag_hooks()
 
-   w.hook_config("plugins.var.lua."..script_name..".*", "config_cb", "")
+   -- w.hook_config("plugins.var.lua."..script_name..".*", "config_cb", "")
 end
 
 function lag_hooks()
-   local conf, hooks = g.config, g.hooks
-   if not conf.enable_lag_indicator then
+   local options, hooks = g.options, g.hooks
+   if w.config_boolean(options.look.enable_lag_indicator) == 0 then
       if hooks.lag then
          for server, timers in pairs(hooks.lag) do
             for name, ptr in pairs(timers) do
@@ -357,64 +459,53 @@ function lag_timer_cb(param)
    return w.WEECHAT_RC_OK
 end
 
-function config_init()
-   local defaults, colors = g.defaults, g.colors
-   for name, info in pairs(defaults) do
-      local value
-      if w.config_is_set_plugin(name) == 1 then
-         value = w.config_get_plugin(name)
-      else
-         w.config_set_plugin(name, info.value)
-         w.config_set_desc_plugin(name, info.desc)
-         value = info.value
-      end
-      config_cb("script_init", name, value)
-   end
-end
+-- function config_init()
+--    local defaults, colors = g.defaults, g.colors
+--    for name, info in pairs(defaults) do
+--       local value
+--       if w.config_is_set_plugin(name) == 1 then
+--          value = w.config_get_plugin(name)
+--       else
+--          w.config_set_plugin(name, info.value)
+--          w.config_set_desc_plugin(name, info.desc)
+--          value = info.value
+--       end
+--       config_cb("script_init", name, value)
+--    end
+-- end
 
-function config_cb(param, opt_name, opt_value)
-   opt_name = opt_name:gsub("^plugins%.var%.lua%."..script_name..".", "")
-   local info = g.defaults[opt_name]
-   if info then
-      if info.type == "boolean" then
-         opt_value = w.config_string_to_boolean(opt_value) == 1
-      elseif info.type == "number" then
-         opt_value = tonumber(opt_value)
-      elseif info.choices and not info.choices[opt_value] then
-         opt_value = info.value
-      end
-      g.config[opt_name] = opt_value
-      if info.type == "color" then
-         g.colors[opt_name] = w.color(opt_value)
-      end
-   end
-   if param ~= "script_init" then
-      if opt_name == "bar_name" then
-         bar_init()
-      elseif opt_name == "enable_lag_indicator" then
-         lag_hooks()
-      elseif opt_name == "relation" or
-         opt_name == "show_hidden_buffers" or
-         opt_name == "max_name_length" or
-         opt_name == "prefix_not_joined" or
-         opt_name == "color_prefix_not_joined" then
-         return rebuild_cb(nil, "config_changed")
-      end
-      w.bar_item_update(script_name)
-   end
-   return w.WEECHAT_RC_OK
-end
-
-function bar_init()
-   local name = g.config.bar_name
-   local ptr_bar = w.bar_search(name)
-   if ptr_bar == "" then
-      ptr_bar = w.bar_new(
-         name, "off", 100, "root", "", "left", "columns_vertical", "vertical",
-         0, 20, "default", "cyan", "default", "on", script_name)
-   end
-   return ptr_bar
-end
+-- function config_cb(param, opt_name, opt_value)
+--    opt_name = opt_name:gsub("^plugins%.var%.lua%."..script_name..".", "")
+--    local info = g.defaults[opt_name]
+--    if info then
+--       if info.type == "boolean" then
+--          opt_value = w.config_string_to_boolean(opt_value) == 1
+--       elseif info.type == "number" then
+--          opt_value = tonumber(opt_value)
+--       elseif info.choices and not info.choices[opt_value] then
+--          opt_value = info.value
+--       end
+--       g.config[opt_name] = opt_value
+--       if info.type == "color" then
+--          g.colors[opt_name] = w.color(opt_value)
+--       end
+--    end
+--    if param ~= "script_init" then
+--       if opt_name == "bar_name" then
+--          bar_init()
+--       elseif opt_name == "enable_lag_indicator" then
+--          lag_hooks()
+--       elseif opt_name == "relation" or
+--          opt_name == "show_hidden_buffers" or
+--          opt_name == "max_name_length" or
+--          opt_name == "prefix_placeholder" or
+--          opt_name == "color_prefix_placeholder" then
+--          return rebuild_cb(nil, "config_changed")
+--       end
+--       w.bar_item_update(script_name)
+--    end
+--    return w.WEECHAT_RC_OK
+-- end
 
 function mouse_init()
    w.hook_focus(script_name, "focus_cb", "")
@@ -558,21 +649,22 @@ function regroup_by_server(own_index, buffer, new_var)
 end
 
 function localvar_changed_cb(_, signal_name, ptr_buffer)
-   local conf = g.config
+   local options = g.options
    local buffer, index = get_buffer_by_pointer(ptr_buffer)
    if not buffer then
       return w.WEECHAT_RC_OK
    end
    local h_buffer = w.hdata_get("buffer")
    local new_var = w.hdata_hashtable(h_buffer, ptr_buffer, "local_variables")
-   if conf.relation == "same_server" and buffer.var.server ~= new_var.server then
+   if w.config_string(options.look.relation) == "same_server" and
+      buffer.var.server ~= new_var.server then
       return rebuild_cb(nil, "server_changed", ptr_buffer)
    end
    if buffer.var.type ~= new_var.type and
       new_var.type == "channel" and
       not buffer.nick_prefix then
-      buffer.nick_prefix = g.config.prefix_not_joined
-      buffer.nick_prefix_color = g.config.color_prefix_not_joined
+      buffer.nick_prefix = w.config_string(options.look.prefix_placeholder)
+      buffer.nick_prefix_color = w.config_string(options.color.prefix_placeholder)
    end
    buffer.var = new_var
    w.bar_item_update(script_name)
@@ -580,7 +672,8 @@ function localvar_changed_cb(_, signal_name, ptr_buffer)
 end
 
 function renamed_cb(_, _, ptr_buffer)
-   local max_length, char_more = g.config.max_name_length, g.config.char_more
+   local max_length = w.config_integer(g.options.look.max_name_length)
+   local char_more = w.config_string(g.options.look.char_more)
    local buffer = get_buffer_by_pointer(ptr_buffer)
    if buffer then
       for _, k in ipairs({"full_name", "name", "short_name"}) do
@@ -694,8 +787,8 @@ function nicklist_cb(_, signal_name, data)
    end
    if nick == buffer.var.nick then
       if signal_name == "nicklist_nick_removed" then
-         buffer.nick_prefix = g.config.prefix_not_joined
-         buffer.nick_prefix_color = g.config.color_prefix_not_joined
+         buffer.nick_prefix = w.config_string(g.options.look.prefix_placeholder)
+         buffer.nick_prefix_color = w.config_string(g.options.color.prefix_placeholder)
       else
          buffer.nick_prefix = w.nicklist_nick_get_string(ptr_buffer, ptr_nick, "prefix")
          buffer.nick_prefix_color = w.nicklist_nick_get_string(ptr_buffer, ptr_nick, "prefix_color")
@@ -749,7 +842,7 @@ function get_buffer_by_pointer(ptr_buffer)
 end
 
 function get_buffer_list()
-   local entries, groups, conf = {}, {}, g.config
+   local entries, groups, options = {}, {}, g.options
    local pointers = {}
    local index, prev_index, max_num_len = 0, 0, 0
    local current_buffer = w.current_buffer()
@@ -757,9 +850,19 @@ function get_buffer_list()
    local ptr_buffer = w.hdata_get_list(h_buffer, "gui_buffers")
    local names = { "name", "short_name", "full_name" }
    local prev_number = 0
+
+   local o = {
+      show_hidden_buffers = w.config_boolean(options.look.show_hidden_buffers),
+      relation = w.config_string(options.look.relation),
+      max_name_length = w.config_integer(options.look.max_name_length),
+      char_more = w.config_string(options.look.char_more),
+      prefix_placeholder = w.config_string(options.look.prefix_placeholder),
+      color_prefix_placeholder = w.config_string(options.color.prefix_placeholder)
+   }
+
    while ptr_buffer ~= "" do
       local is_hidden = w.hdata_integer(h_buffer, ptr_buffer, "hidden") == 1
-      if not is_hidden or conf.show_hidden_buffers then
+      if not is_hidden or o.show_hidden_buffers == 1 then
          local t = {
             pointer = ptr_buffer,
             number = w.hdata_integer(h_buffer, ptr_buffer, "number"),
@@ -788,15 +891,15 @@ function get_buffer_list()
             if t.number == prev_number then
                if not entries[prev_index].merged then
                   entries[prev_index].merged = true
-                  if conf.relation == "merged" then
+                  if o.relation == "merged" then
                      entries[prev_index].rel = "start"
                   end
                end
                t.merged = true
-               if conf.relation == "merged" then
+               if o.relation == "merged" then
                   t.rel = "middle"
                end
-            elseif entries[prev_index].merged and conf.relation == "merged" then
+            elseif entries[prev_index].merged and o.relation == "merged" then
                entries[prev_index].rel = "end"
             end
          end
@@ -805,8 +908,8 @@ function get_buffer_list()
 
          for _, k in pairs(names) do
             t[k] = w.string_remove_color(w.hdata_string(h_buffer, ptr_buffer, k), "")
-            if conf.max_name_length > 0 then
-               t[k] = string_limit(t[k], conf.max_name_length, conf.char_more)
+            if o.max_name_length > 0 then
+               t[k] = string_limit(t[k], o.max_name_length, o.char_more)
             end
          end
 
@@ -819,12 +922,12 @@ function get_buffer_list()
                   t.nick_prefix_color = w.hdata_string(h_nick, ptr_nick, "prefix_color")
                end
             else
-               t.nick_prefix = conf.prefix_not_joined
-               t.nick_prefix_color = conf.color_prefix_not_joined
+               t.nick_prefix = o.prefix_placeholder
+               t.nick_prefix_color = o.color_prefix_placeholder
             end
          end
 
-         if conf.relation == "same_server" and
+         if o.relation == "same_server" and
             t.var.server and t.var.server ~= "" and
             (t.var.type == "server" or t.var.type == "channel" or t.var.type == "private") then
             if not groups[t.var.server] then
@@ -844,7 +947,7 @@ function get_buffer_list()
 
    end -- while ptr_buffer ...
 
-   if conf.relation == "same_server" then
+   if o.relation == "same_server" then
       entries, pointers = group_by_server(entries, groups, pointers)
    end
 
@@ -930,23 +1033,31 @@ function generate_output()
    if total_entries == 0 then
       return ""
    end
-   local hl, conf, c, sel = g.hotlist, g.config, g.colors, g.selection
+   local hl, options, c, sel = g.hotlist, g.options, g.colors, g.selection
    local num_fmt, idx_fmt
-   if conf.align_number ~= "none" then
-      local minus = conf.align_number == "left" and "-" or ""
+   local o = {
+      align_number = w.config_string(options.look.align_number),
+      char_selection = w.config_string(options.look.char_selection),
+      always_show_number = w.config_boolean(options.look.always_show_number),
+      format = w.config_string(options.look.format),
+      char_more = w.config_string(options.look.char_more)
+   }
+
+   if o.align_number ~= "none" then
+      local minus = o.align_number == "left" and "-" or ""
       num_fmt = "%"..minus..g.max_num_length.."s"
       idx_fmt = "%"..minus..#tostring(total_entries).."s"
    end
    local entries, last_num = {}, 0
    local rels = {
-      start = conf.rel_char_start,
-      middle = conf.rel_char_middle,
-      ["end"] = conf.rel_char_end,
-      none = conf.rel_char_none
+      start = w.config_string(options.look.rel_char_start),
+      middle = w.config_string(options.look.rel_char_middle),
+      ["end"] = w.config_string(options.look.rel_char_end),
+      none = w.config_string(options.look.rel_char_none)
    }
    local sel_phold
-   if conf.char_selection ~= "" then
-      sel_phold = string.rep(" ", w.strlen_screen(conf.char_selection))
+   if o.char_selection ~= "" then
+      sel_phold = string.rep(" ", w.strlen_screen(o.char_selection))
    end
    local prev_number = 0
    for i, b in ipairs(buffers.list) do
@@ -956,31 +1067,31 @@ function generate_output()
          full_name = b.full_name
       }
       local colors = {
-         delim = c.color_delim,
-         rel = c.color_rel,
-         hotlist = c.color_delim,
-         base = c.color_normal
+         delim = c.delim,
+         rel = c.rel,
+         hotlist = c.delim,
+         base = c.normal
       }
       if b.current then
-         colors.base = c.color_current
+         colors.base = c.current
       elseif sel[b.pointer] and not sel_phold then
-         colors.base = c.color_selected
+         colors.base = c.selected
       elseif b.displayed and b.active > 0 then
-         colors.base = c.color_other_win
+         colors.base = c.other_win
       elseif b.zoomed and b.active == 0 then
-         colors.name = c.color_out_of_zoom
+         colors.name = c.out_of_zoom
       elseif b.hidden then
-         colors.name = c.color_hidden
+         colors.name = c.hidden
       end
 
       items.rel = rels[b.rel] or rels.none
       items.number = b.number
-      if not conf.always_show_number and prev_number == b.number then
+      if o.always_show_number == 1 and prev_number == b.number then
          items.number = ""
       end
       prev_number = b.number
       items.index = idx_fmt and idx_fmt:format(i) or i
-      colors.index, colors.number = c.color_number, c.color_number
+      colors.index, colors.number = c.number, c.number
       if num_fmt then
          items.number = num_fmt:format(items.number)
       end
@@ -992,12 +1103,12 @@ function generate_output()
             local lev = hl.levels[k]
             if hotlist[lev] > 0 then
                if not color_highest_lev then
-                  color_highest_lev = c["color_hotlist_"..lev]
+                  color_highest_lev = c["hotlist_"..lev]
                end
-               table.insert(h, c["color_hotlist_"..lev]..hotlist[lev])
+               table.insert(h, c["hotlist_"..lev]..hotlist[lev])
             end
          end
-         items.hotlist = table.concat(h, c.color_delim..",")
+         items.hotlist = table.concat(h, c.delim..",")
       end
 
       if not colors.name then
@@ -1018,20 +1129,20 @@ function generate_output()
 
       if b.lag then
          items.lag = string.format("%.3g", b.lag / 1000)
-         colors.lag = c.color_lag
+         colors.lag = c.lag
       end
 
       if sel[b.pointer] then
-         items.sel = conf.char_selection
-         colors.sel = c.color_selected
+         items.sel = o.char_selection
+         colors.sel = c.selected
       elseif sel_phold then
          items.sel = sel_phold
       end
 
-      local entry = replace_format(conf.format, items, b.var, colors, conf.char_more)
+      local entry = replace_format(o.format, items, b.var, colors, o.char_more)
       buffers.list[i].length = w.strlen_screen(entry)
       if b.current then
-         entry = c.color_current..strip_bg_color(entry)
+         entry = c.current..strip_bg_color(entry)
       end
       table.insert(entries, entry)
    end
@@ -1111,7 +1222,7 @@ function scroll_bar_area(t)
 end
 
 function autoscroll(mode)
-   local bar_name = g.config.bar_name
+   local bar_name = w.config_string(g.options.look.bar_name)
    local ptr_bar = w.bar_search(bar_name)
    if ptr_bar == "" then
       return
@@ -1319,6 +1430,7 @@ function unload_cb()
    for key, _ in pairs(g.mouse.keys) do
       w.key_unbind("mouse", key)
    end
+   w.config_write(g.config_file)
    return w.WEECHAT_RC_OK
 end
 
