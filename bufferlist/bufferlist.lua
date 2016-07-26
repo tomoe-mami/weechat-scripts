@@ -312,7 +312,7 @@ function config_bar_cb(_, ptr_opt)
       local opt_name = "weechat.bar."..bar_name..".items"
       local opt_items = w.config_string(w.config_get(opt_name))
       if opt_items ~= script_name then
-         w.print("", "Warning: Auto-scroll has been disabled")
+         print("Warning: Auto-scroll has been disabled")
       end
    end
    if g.config_loaded then
@@ -465,54 +465,6 @@ function lag_timer_cb(param)
    end
    return w.WEECHAT_RC_OK
 end
-
--- function config_init()
---    local defaults, colors = g.defaults, g.colors
---    for name, info in pairs(defaults) do
---       local value
---       if w.config_is_set_plugin(name) == 1 then
---          value = w.config_get_plugin(name)
---       else
---          w.config_set_plugin(name, info.value)
---          w.config_set_desc_plugin(name, info.desc)
---          value = info.value
---       end
---       config_cb("script_init", name, value)
---    end
--- end
-
--- function config_cb(param, opt_name, opt_value)
---    opt_name = opt_name:gsub("^plugins%.var%.lua%."..script_name..".", "")
---    local info = g.defaults[opt_name]
---    if info then
---       if info.type == "boolean" then
---          opt_value = w.config_string_to_boolean(opt_value) == 1
---       elseif info.type == "number" then
---          opt_value = tonumber(opt_value)
---       elseif info.choices and not info.choices[opt_value] then
---          opt_value = info.value
---       end
---       g.config[opt_name] = opt_value
---       if info.type == "color" then
---          g.colors[opt_name] = w.color(opt_value)
---       end
---    end
---    if param ~= "script_init" then
---       if opt_name == "bar_name" then
---          bar_init()
---       elseif opt_name == "enable_lag_indicator" then
---          lag_hooks()
---       elseif opt_name == "relation" or
---          opt_name == "show_hidden_buffers" or
---          opt_name == "max_name_length" or
---          opt_name == "prefix_placeholder" or
---          opt_name == "color_prefix_placeholder" then
---          return rebuild_cb(nil, "config_changed")
---       end
---       w.bar_item_update(script_name)
---    end
---    return w.WEECHAT_RC_OK
--- end
 
 function mouse_init()
    w.hook_focus(script_name, "focus_cb", "")
@@ -1422,14 +1374,6 @@ function cmd_close()
       w.buffer_close(entry.pointer)
    end
    cmd_selection("clear")
-   return w.WEECHAT_RC_OK
-end
-
-function cmd_set_property(name, value)
-   local sl = get_selection()
-   for _, entry in ipairs(sel) do
-      w.buffer_set(entry.pointer, name, value)
-   end
    return w.WEECHAT_RC_OK
 end
 
