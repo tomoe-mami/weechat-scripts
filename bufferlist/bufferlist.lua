@@ -1,6 +1,7 @@
 w, script_name = weechat, "bufferlist"
 
 g = {
+   config_loaded = false,
    max_num_length = 0,
    current_index = 0,
    buffers = {
@@ -72,7 +73,7 @@ function config_init()
       section = sections.look,
       options = {
          format = {
-            default = "number ,rel, short_name,(lag), (hotlist)",
+            default = "number ,rel,prefix,short_name,(lag), (hotlist)",
             desc = "Format of buffer entry",
             change_cb = "redraw_cb"
          },
@@ -101,7 +102,7 @@ function config_init()
          },
          prefix_placeholder = {
             default = " ",
-            desc = "Placeholder for item nick_prefix when you're not in the channel",
+            desc = "Placeholder for item prefix",
             change_cb = "rebuild_cb"
          },
          max_name_length = {
@@ -164,7 +165,7 @@ function config_init()
       section = sections.color,
       options = {
          number = {
-            default = "green",
+            default = "yellow",
             desc = "Color for buffer numbers and indexes",
             change_cb = "config_color_cb"
          },
@@ -179,7 +180,7 @@ function config_init()
             change_cb = "config_color_cb"
          },
          selected = {
-            default  = "emphasis",
+            default  = "white,blue",
             desc = "Color of selected buffer",
             change_cb = "config_color_cb"
          },
@@ -204,37 +205,37 @@ function config_init()
             change_cb = "config_color_cb"
          },
          hotlist_message = {
-            default = "yellow",
+            default = "cyan",
             desc = "Color for buffers with hotlist level message (channel conversation)",
             change_cb = "config_color_cb"
          },
          hotlist_private = {
-            value = "lightgreen",
+            default  = "lightgreen",
             desc = "Color for buffers with hotlist level private",
             change_cb = "config_color_cb"
          },
          hotlist_highlight = {
-            value = "magenta",
+            default  = "lightmagenta",
             desc = "Color for buffers with hotlist level highlight",
             change_cb = "config_color_cb"
          },
          rel = {
-            value = "default",
+            default = "default",
             desc = "Color for rel chars",
             change_cb = "config_color_cb"
          },
          prefix_placeholder = {
-            value = "red",
+            default = "red",
             desc = "Color for option prefix_placeholder",
             change_cb = "config_color_cb"
          },
          delim = {
-            value = "bar_delim",
+            default = "bar_delim",
             desc = "Color for delimiter",
             change_cb = "config_color_cb"
          },
          lag = {
-            value = "default",
+            default = "default",
             desc = "Color for lag indicator",
             change_cb = "config_color_cb"
          }
@@ -253,8 +254,7 @@ function config_init()
       config_bar_cb(nil, options.look.bar_name)
    end
    g.colors = config_load_colors(options.color)
-
-   return true
+   g.config_loaded = true
 end
 
 function config_create_options(data)
@@ -288,6 +288,9 @@ function config_color_cb(_, ptr_opt)
    local h_opt = w.hdata_get("config_option")
    local name = w.hdata_string(h_opt, ptr_opt, "name")
    g.colors[name] = w.color(w.config_string(ptr_opt))
+   if g.config_loaded then
+      redraw_cb()
+   end
 end
 
 function config_load_colors(list)
@@ -311,6 +314,9 @@ function config_bar_cb(_, ptr_opt)
       if opt_items ~= script_name then
          w.print("", "Warning: Auto-scroll has been disabled")
       end
+   end
+   if g.config_loaded then
+      redraw_cb()
    end
 end
 
@@ -336,11 +342,12 @@ function register_hooks()
    w.hook_hsignal("9000|nicklist_nick_changed", "nicklist_cb", "")
 
    lag_hooks()
-
-   -- w.hook_config("plugins.var.lua."..script_name..".*", "config_cb", "")
 end
 
 function lag_hooks()
+   if not g.config_loaded then
+      return
+   end
    local options, hooks = g.options, g.hooks
    if w.config_boolean(options.look.enable_lag_indicator) == 0 then
       if hooks.lag then
@@ -579,12 +586,14 @@ function mouse_event_cb(_, _, t)
 end
 
 function rebuild_cb(_, signal_name, ptr_buffer)
-   g.buffers, g.max_num_length = get_buffer_list()
-   w.bar_item_update(script_name)
-   if signal_name == "script_init" then
-      w.hook_timer(50, 0, 1, "autoscroll", "now")
-   else
-      autoscroll()
+   if g.config_loaded then
+      g.buffers, g.max_num_length = get_buffer_list()
+      w.bar_item_update(script_name)
+      if signal_name == "script_init" then
+         w.hook_timer(50, 0, 1, "autoscroll", "now")
+      else
+         autoscroll()
+      end
    end
    return w.WEECHAT_RC_OK
 end
@@ -662,9 +671,9 @@ function localvar_changed_cb(_, signal_name, ptr_buffer)
    end
    if buffer.var.type ~= new_var.type and
       new_var.type == "channel" and
-      not buffer.nick_prefix then
-      buffer.nick_prefix = w.config_string(options.look.prefix_placeholder)
-      buffer.nick_prefix_color = w.config_string(options.color.prefix_placeholder)
+      not buffer.prefix then
+      buffer.prefix = w.config_string(options.look.prefix_placeholder)
+      buffer.prefix_color = w.config_string(options.color.prefix_placeholder)
    end
    buffer.var = new_var
    w.bar_item_update(script_name)
@@ -762,9 +771,11 @@ function zoom_cb(_, signal, ptr_buffer)
    return w.WEECHAT_RC_OK
 end
 
-function redraw_cb(_, signal_name, ptr)
-   w.bar_item_update(script_name)
-   autoscroll("now")
+function redraw_cb()
+   if g.config_loaded then
+      w.bar_item_update(script_name)
+      autoscroll("now")
+   end
    return w.WECHAT_RC_OK
 end
 
@@ -787,11 +798,11 @@ function nicklist_cb(_, signal_name, data)
    end
    if nick == buffer.var.nick then
       if signal_name == "nicklist_nick_removed" then
-         buffer.nick_prefix = w.config_string(g.options.look.prefix_placeholder)
-         buffer.nick_prefix_color = w.config_string(g.options.color.prefix_placeholder)
+         buffer.prefix = w.config_string(g.options.look.prefix_placeholder)
+         buffer.prefix_color = w.config_string(g.options.color.prefix_placeholder)
       else
-         buffer.nick_prefix = w.nicklist_nick_get_string(ptr_buffer, ptr_nick, "prefix")
-         buffer.nick_prefix_color = w.nicklist_nick_get_string(ptr_buffer, ptr_nick, "prefix_color")
+         buffer.prefix = w.nicklist_nick_get_string(ptr_buffer, ptr_nick, "prefix")
+         buffer.prefix_color = w.nicklist_nick_get_string(ptr_buffer, ptr_nick, "prefix_color")
       end
       w.bar_item_update(script_name)
    end
@@ -918,12 +929,12 @@ function get_buffer_list()
             if nicks > 0 and t.var.nick and t.var.nick ~= "" then
                local ptr_nick = w.nicklist_search_nick(ptr_buffer, "", t.var.nick)
                if ptr_nick ~= "" then
-                  t.nick_prefix = w.hdata_string(h_nick, ptr_nick, "prefix")
-                  t.nick_prefix_color = w.hdata_string(h_nick, ptr_nick, "prefix_color")
+                  t.prefix = w.hdata_string(h_nick, ptr_nick, "prefix")
+                  t.prefix_color = w.hdata_string(h_nick, ptr_nick, "prefix_color")
                end
             else
-               t.nick_prefix = o.prefix_placeholder
-               t.nick_prefix_color = o.color_prefix_placeholder
+               t.prefix = o.prefix_placeholder
+               t.prefix_color = o.color_prefix_placeholder
             end
          end
 
@@ -1086,7 +1097,7 @@ function generate_output()
 
       items.rel = rels[b.rel] or rels.none
       items.number = b.number
-      if o.always_show_number == 1 and prev_number == b.number then
+      if o.always_show_number == 0 and prev_number == b.number then
          items.number = ""
       end
       prev_number = b.number
@@ -1120,11 +1131,11 @@ function generate_output()
          items.short_name = items.name
       end
 
-      if b.nick_prefix then
-         items.nick_prefix = b.nick_prefix
-         colors.nick_prefix = w.color(b.nick_prefix_color)
+      if b.prefix then
+         items.prefix = b.prefix
+         colors.prefix = w.color(b.prefix_color)
       else
-         items.nick_prefix, colors.nick_prefix = " ", colors.base
+         items.prefix, colors.prefix = " ", colors.base
       end
 
       if b.lag then
