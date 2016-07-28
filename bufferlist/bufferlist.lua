@@ -342,6 +342,19 @@ function register_hooks()
    w.hook_hsignal("9000|nicklist_nick_changed", "nicklist_cb", "")
 
    lag_hooks()
+
+   w.hook_command(
+      script_name,
+      "Extra helper for bufferlist",
+      "jump <index>"..
+      " || jump next|prev|first|last [related|unrelated]"..
+      " || run <command>",
+[[
+ jump: Jump to buffer based on display position.
+  run: Evaluate and run command on selected buffers. If no buffers are selected, current buffer will be used.
+]],
+      "jump next|prev|first|last related|unrelated || run",
+      "command_cb", "")
 end
 
 function lag_hooks()
@@ -514,7 +527,7 @@ function mouse_event_cb(_, _, t)
    else
       if t.key == "button1" then
          if not g.mouse.drag then
-            cmd_switch(t.pointer)
+            cmd_jump_mouse(t.pointer)
          end
       elseif t.key == "ctrl-button2" then
          cmd_selection("clear")
@@ -529,6 +542,10 @@ function mouse_event_cb(_, _, t)
          if g.mouse.temp_select then
             cmd_selection("clear")
          end
+      elseif t.key == "wheelup" then
+         cmd_jump("", "prev")
+      elseif t.key == "wheeldown" then
+         cmd_jump("", "next")
       end
       g.mouse.temp_select = nil
       g.mouse.last_event = nil
@@ -576,7 +593,7 @@ function regroup_by_server(own_index, buffer, new_var)
       return
    end
    local pos = 0
-   for i = server_index, #buffers.list do
+   for i = server_index, buffers.total do
       pos = i
       if buffers.list[i].var.server ~= new_var.server or
          buffers.list[i].number > buffer.number then
@@ -807,7 +824,7 @@ end
 function get_buffer_list()
    local entries, groups, options = {}, {}, g.options
    local pointers = {}
-   local index, prev_index, max_num_len = 0, 0, 0
+   local index, prev_index = 0, 0, 0
    local current_buffer = w.current_buffer()
    local h_buffer, h_nick = w.hdata_get("buffer"), w.hdata_get("nick")
    local ptr_buffer = w.hdata_get_list(h_buffer, "gui_buffers")
@@ -838,11 +855,6 @@ function get_buffer_list()
             var = w.hdata_hashtable(h_buffer, ptr_buffer, "local_variables"),
             rel = ""
          }
-
-         local num_len = #tostring(t.number)
-         if num_len > max_num_len then
-            max_num_len = num_len
-         end
 
          prev_index, index = index, index + 1
          pointers[ptr_buffer] = index
@@ -914,7 +926,7 @@ function get_buffer_list()
       entries, pointers = group_by_server(entries, groups, pointers)
    end
 
-   return { list = entries, pointers = pointers }, max_num_len
+   return { list = entries, pointers = pointers, total = index }, #tostring(prev_number)
 end
 
 function group_by_server(entries, groups)
@@ -989,11 +1001,7 @@ end
 
 function generate_output()
    local buffers = g.buffers
-   if not buffers.list then
-      return ""
-   end
-   local total_entries = #buffers.list
-   if total_entries == 0 then
+   if not buffers.list or not buffers.total or buffers.total < 1 then
       return ""
    end
    local hl, options, c, sel = g.hotlist, g.options, g.colors, g.selection
@@ -1009,7 +1017,7 @@ function generate_output()
    if o.align_number ~= "none" then
       local minus = o.align_number == "left" and "-" or ""
       num_fmt = "%"..minus..g.max_num_length.."s"
-      idx_fmt = "%"..minus..#tostring(total_entries).."s"
+      idx_fmt = "%"..minus..#tostring(buffers.total).."s"
    end
    local entries, last_num = {}, 0
    local rels = {
@@ -1306,7 +1314,7 @@ function cmd_unmerge()
    return w.WEECHAT_RC_OK
 end
 
-function cmd_switch(ptr_buffer)
+function cmd_jump_mouse(ptr_buffer)
    if ptr_buffer and ptr_buffer ~= "" then
       cmd_selection("clear")
       w.buffer_set(ptr_buffer, "display", "1")
@@ -1375,6 +1383,153 @@ function cmd_close()
    end
    cmd_selection("clear")
    return w.WEECHAT_RC_OK
+end
+
+function get_related_buffer(dir, index)
+   local buffers = g.buffers
+   index = index or g.current_index
+   if not buffers.list[index].rel or buffers.list[index].rel == "" then
+      return
+   end
+   if (dir == "first" and buffers.list[index].rel == "start") or
+      (dir == "last" and buffers.list[index].rel == "end") then
+      return
+   end
+   local target, p
+   local forward = { index + 1, buffers.total, 1, "end", "start" }
+   local backward = { index - 1, 1, -1, "start", "end" }
+   if dir == "next" or dir == "last" then
+      p = forward
+   else
+      p = backward
+   end
+   for i = p[1], p[2], p[3] do
+      local rel = buffers.list[i].rel
+      if not rel or rel == "" or rel == p[5] then
+         break
+      elseif rel == "middle" or rel == p[4] then
+         target = i
+         if dir == "next" or dir == "prev" then
+            break
+         end
+      end
+   end
+   if not target then
+      if dir == "first" or dir == "last" then
+         return
+      end
+      p = dir == "next" and backward or forward
+      for i = p[1], p[2], p[3] do
+      local rel = buffers.list[i].rel
+         if not rel or rel == "" or rel == p[5] then
+            break
+         end
+         target = i
+      end
+   end
+   return buffers.list[target], target
+end
+
+function cmd_jump_related(dir)
+   local buffer = get_related_buffer(dir)
+   if buffer then
+      w.buffer_set(buffer.pointer, "display", "1")
+      return w.WEECHAT_RC_OK
+   end
+end
+
+function cmd_jump_unrelated(dir)
+   if dir == "first" or dir == "last" then
+      return cmd_jump_normal(dir)
+   end
+   local buffer, index = get_related_buffer(dir == "next" and "last" or "first")
+   if not buffer then
+      return cmd_jump_normal(dir)
+   end
+   if dir == "next" then
+      return cmd_jump_normal(index + 1)
+   elseif dir == "prev" then
+      return cmd_jump_normal(index - 1)
+   end
+end
+
+function cmd_jump_normal(param)
+   local index, buffers = g.current_index, g.buffers
+   if type(param) == "number" then
+      index = param
+   elseif param == "first" then
+      index = 1
+   elseif param == "last" then
+      index = buffers.total
+   elseif param == "next" then
+      index = index + 1
+   elseif param == "prev" then
+      index = index - 1
+   else
+      return w.WEECHAT_RC_ERROR
+   end
+   if index < 1 then
+      index = buffers.total
+   elseif index > buffers.total then
+      index = 1
+   end
+   if buffers.list[index] then
+      w.buffer_set(buffers.list[index].pointer, "display", "1")
+   end
+   return w.WEECHAT_RC_OK
+
+end
+
+function cmd_jump(ptr_buffer, param)
+   local arg1, arg2 = param:match("^(%S+)%s*(%S*)")
+   local dirs = { next = true, prev = true, first = true, last = true }
+   if not arg1 or not dirs[arg1] then
+      arg1 = tonumber(arg1)
+      if not arg1 then
+         return w.WEECHAT_RC_ERROR
+      end
+   end
+   if arg2 and (arg2 == "related" or arg2 == "unrelated") then
+      local relation = w.config_string(g.options.look.relation)
+      if relation ~= "none" then
+         if arg2 == "related" then
+            return cmd_jump_related(arg1)
+         elseif arg2 == "unrelated" then
+            return cmd_jump_unrelated(arg1)
+         end
+      end
+   end
+   return cmd_jump_normal(arg1)
+end
+
+function cmd_run(ptr_buffer, param)
+   local sel = get_selection()
+   if #sel == 0 then
+      table.insert(sel, g.buffers.list[g.current_index])
+   end
+   for _, buffer in ipairs(sel) do
+      local cmd = w.string_eval_expression(
+                     param, { buffer = buffer.pointer }, {}, {})
+      w.command(buffer.pointer, cmd)
+   end
+   return w.WEECHAT_RC_OK
+end
+
+function command_cb(_, ptr_buffer, param)
+   local cmd, param = param:match("^(%S+)%s*(.*)")
+   if not cmd then
+      return w.WEECHAT_RC_ERROR
+   end
+   local func
+   if cmd == "jump" then
+      func = cmd_jump
+   elseif cmd == "run" then
+      func = cmd_run
+   else
+      print("Error: Unknown command: ${cmd}", { cmd = cmd })
+      return w.WEECHAT_RC_ERROR
+   end
+   return func(ptr_buffer, param)
 end
 
 function item_cb()
