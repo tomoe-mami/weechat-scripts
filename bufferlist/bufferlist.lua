@@ -1299,15 +1299,21 @@ end
 
 function cmd_unmerge()
    local sel = get_selection()
+   local h_buffer = w.hdata_get("buffer")
    for _, buffer in ipairs(sel) do
       if buffer.merged then
-         local zoomed = buffer.zoomed
+         local zoomed, ptr_other = buffer.zoomed
          if zoomed then
+            ptr_other = w.hdata_pointer(h_buffer, buffer.pointer, "prev_buffer")
+            if ptr_other == "" or
+               w.hdata_integer(h_buffer, ptr_other, "number") ~= buffer.number then
+               ptr_other = w.hdata_pointer(h_buffer, buffer.pointer, "next_buffer")
+            end
             w.command(buffer.pointer, "/input zoom_merged_buffer")
          end
          w.buffer_unmerge(buffer.pointer, -1)
-         if zoomed then
-            w.command(buffer.pointer, "/input zoom_merged_buffer")
+         if zoomed and ptr_other ~= "" then
+            w.command(ptr_other, "/input zoom_merged_buffer")
          end
       end
    end
