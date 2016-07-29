@@ -1,6 +1,6 @@
 # bufferlist
 
-A script for displaying list of buffers in a bar.
+A script for displaying list of buffers in a bar. Requires Weechat ≥ 1.0.
 
 It has the same purpose as [buffers.pl][] but with better performance (no infolist
 call, recreate buffer list only when needed, use flexible format of buffer
@@ -16,7 +16,7 @@ position).
 Currently the mouse bindings are hardcoded.
 
 Button                              | Action
-------------------------------------|------------------------
+------------------------------------|--------------------------------
 Left click                          | Switch buffer
 Left button, drag                   | Select buffers
 Right button, drag                  | Deselect buffers
@@ -25,7 +25,7 @@ Ctrl-Left button, drag within list  | Move buffers
 Ctrl-Left button, drag out of list  | Close buffers
 Middle click                        | Merge buffers
 Ctrl-Middle click                   | Unmerge buffers
-
+Wheel-up/wheel-down                 | Switch to previous/next buffer
 
 ## Options
 
@@ -93,14 +93,14 @@ related.
 For example in `same_server` relation mode, if you want to have
 similar indenting-style like buffers.pl you can use:
 
-    /set plugins.var.lua.bufferlist.rel_char_middle "  "
-    /set plugins.var.lua.bufferlist.rel_char_end    "  "
+    /set bufferlist.look.rel_char_middle "  "
+    /set bufferlist.look.rel_char_end    "  "
 
 or if you want to have tree-like display:
 
-    /set plugins.var.lua.bufferlist.rel_char_start  "┌"
-    /set plugins.var.lua.bufferlist.rel_char_middle "├─"
-    /set plugins.var.lua.bufferlist.rel_char_end    "└─"
+    /set bufferlist.look.rel_char_start  "┌"
+    /set bufferlist.look.rel_char_middle "├─"
+    /set bufferlist.look.rel_char_end    "└─"
 
 
 #### bufferlist.look.prefix_placeholder
