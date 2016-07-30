@@ -1,4 +1,4 @@
-w, script_name = weechat, "nickcompletewrapper"
+w, script_name = weechat, "nick_complete_wrapper"
 config, hooks = {}, {}
 
 function main()
