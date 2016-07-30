@@ -243,11 +243,11 @@ function config_write()
    return w.config_write(g.config_file)
 end
 
-function new_line_cb(_, _, line_ptr)
+function new_line_cb(_, _, ptr_line)
    local h_line, h_line_data = w.hdata_get("line"), w.hdata_get("line_data")
-   local ptr, var = {}, {}
+   local ptr, var = { line = ptr_line }, {}
 
-   ptr.line_data = w.hdata_pointer(h_line, line_ptr, "data")
+   ptr.line_data = w.hdata_pointer(h_line, ptr_line, "data")
    if empty(ptr.line_data) then
       return w.WEECHAT_RC_OK
    end
@@ -285,7 +285,8 @@ function new_line_cb(_, _, line_ptr)
    local labels = get_matching_labels(var.host, { eval = true, ptr = ptr, var = var })
    if #labels > 0 then
       local joined_labels = w.color("reset")..table.concat(labels)..w.color("reset") 
-      w.hook_timer(500, 0, 1, "modify_message_cb", ptr.line_data..";"..joined_labels)
+      w.hook_timer(500, 0, 1, "modify_message_cb",
+                   string.format("%s;%s;%s", ptr.buffer, ptr.line, joined_labels))
    end
    return w.WEECHAT_RC_OK
 end
@@ -343,29 +344,52 @@ function get_matching_labels(host, o)
 end
 
 function modify_message_cb(param)
-   local ptr, labels = param:match("^([^;]+);(.*)")
-   if not empty(ptr) then
-      local pos = w.config_string(g.config.option.look.position)
-      local t, h_line_data = {}, w.hdata_get("line_data")
-      if pos == "replace_prefix" then
-         t.prefix = labels
-      elseif pos == "replace_message" then
-         t.message = labels
-      else
-         local message = w.hdata_string(h_line_data, ptr, "message")
-         local prefix = w.hdata_string(h_line_data, ptr, "prefix")
-         if pos == "after_prefix" then
-            t.prefix = prefix.." "..labels
-         elseif pos == "before_prefix" then
-            t.prefix = labels.." "..prefix
-         elseif pos == "before_message" then
-            t.message = labels.." "..message
-         else
-            t.message = message.." "..labels
-         end
-      end
-      w.hdata_update(h_line_data, ptr, t)
+   local ptr_buffer, ptr_target_line, labels = param:match("^([^;]+);([^;]+);(.*)")
+   if empty(ptr_buffer) or empty(ptr_target_line) then
+      return w.WEECHAT_RC_OK
    end
+   local h_buffer = w.hdata_get("buffer")
+   local gui_buffers = w.hdata_get_list(h_buffer, "gui_buffers")
+   if w.hdata_check_pointer(h_buffer, gui_buffers, ptr_buffer) == 0 then
+      return w.WEECHAT_RC_OK
+   end
+   local h_lines, h_line = w.hdata_get("lines"), w.hdata_get("line")
+   local valid_line = false
+   local ptr_own_lines = w.hdata_pointer(h_buffer, ptr_buffer, "own_lines")
+   if ptr_own_lines ~= "" then
+      local ptr_line = w.hdata_pointer(h_lines, ptr_own_lines, "last_line")
+      while ptr_line ~= "" do
+         if ptr_line == ptr_target_line then
+            valid_line = true
+            break
+         end
+         ptr_line = w.hdata_pointer(h_line, ptr_line, "prev_line")
+      end
+   end
+   if not valid_line then
+      return w.WEECHAT_RC_OK
+   end
+   local ptr_line_data = w.hdata_pointer(h_line, ptr_target_line, "data")
+   local pos = w.config_string(g.config.option.look.position)
+   local t, h_line_data = {}, w.hdata_get("line_data")
+   if pos == "replace_prefix" then
+      t.prefix = labels
+   elseif pos == "replace_message" then
+      t.message = labels
+   else
+      local message = w.hdata_string(h_line_data, ptr_line_data, "message")
+      local prefix = w.hdata_string(h_line_data, ptr_line_data, "prefix")
+      if pos == "after_prefix" then
+         t.prefix = prefix.." "..labels
+      elseif pos == "before_prefix" then
+         t.prefix = labels.." "..prefix
+      elseif pos == "before_message" then
+         t.message = labels.." "..message
+      else
+         t.message = message.." "..labels
+      end
+   end
+   w.hdata_update(h_line_data, ptr_line_data, t)
    return w.WEECHAT_RC_OK
 end
 
