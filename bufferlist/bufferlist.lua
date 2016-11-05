@@ -73,7 +73,7 @@ function config_init()
       section = sections.look,
       options = {
          format = {
-            default = "number ,rel,prefix,short_name,(lag), (hotlist)",
+            default = "number ,rel,prefix,short_name, (hotlist)",
             desc = "Format of buffer entry",
             change_cb = "redraw_cb"
          },
@@ -96,7 +96,7 @@ function config_init()
          },
          enable_lag_indicator = {
             type = "boolean",
-            default  = "on",
+            default  = "off",
             desc = "Enable lag indicator in format",
             change_cb = "lag_hooks"
          },
@@ -362,121 +362,41 @@ function lag_hooks()
       return
    end
    local options, hooks = g.options, g.hooks
-   if w.config_boolean(options.look.enable_lag_indicator) == 0 then
-      if hooks.lag then
-         for server, timers in pairs(hooks.lag) do
-            for name, ptr in pairs(timers) do
-               w.unhook(ptr)
-            end
-         end
-         hooks.lag = nil
-      end
-      if hooks.irc_connected then
-         w.unhook(hooks.irc_connected)
-         hooks.irc_connected = nil
-      end
-      return
+   if hooks.lag then
+      w.unhook(hooks.lag)
+      hooks.lag = nil
    end
-   if not hooks.lag then
-      hooks.lag = {}
+   if w.config_boolean(g.options.look.enable_lag_indicator) == 1 then
+      hooks.lag = w.hook_timer(1000, 0, 0, "lag_timer_cb", "")
    end
+end
+
+function lag_timer_cb()
    local min_show = w.config_integer(w.config_get("irc.network.lag_min_show"))
    local h_server = w.hdata_get("irc_server")
    local ptr_server = w.hdata_get_list(h_server, "irc_servers")
+   local need_refresh = false
    while ptr_server ~= "" do
       if w.hdata_integer(h_server, ptr_server, "is_connected") == 1 then
          local ptr_buffer = w.hdata_pointer(h_server, ptr_server, "buffer")
          local buffer = get_buffer_by_pointer(ptr_buffer)
          if buffer then
-            lag_init_buffer(h_server, ptr_server, buffer, min_show)
+            local lag = w.hdata_integer(h_server, ptr_server, "lag_displayed")
+            if lag < min_show then
+               buffer.lag = nil
+            else
+               if not need_refresh and buffer.lag ~= lag then
+                  need_refresh = true
+               end
+               buffer.lag = lag
+            end
          end
       end
       ptr_server = w.hdata_pointer(h_server, ptr_server, "next_server")
    end
-   hooks.irc_connected = w.hook_signal("irc_server_connected", "irc_connected_cb", "")
-end
-
-function lag_init_buffer(h_server, ptr_server, buffer, min_show)
-   local lag = w.hdata_integer(h_server, ptr_server, "lag")
-   buffer.lag = lag >= min_show and lag or nil
-   lag_set_timer(
-      "check",
-      w.hdata_string(h_server, ptr_server, "name"),
-      w.hdata_time(h_server, ptr_server, "lag_next_check"))
-end
-
-function irc_connected_cb(_, _, server_name)
-   local ptr_server, h_server, buffer = get_irc_server(server_name)
-   if ptr_server ~= "" and buffer then
-      local min_show = w.config_integer(w.config_get("irc.network.lag_min_show"))
-      lag_init_buffer(h_server, ptr_server, buffer, min_show)
-   end
-   return w.WEECHAT_RC_OK
-end
-
-function lag_set_timer(timer_type, server_name, t, callback)
-   local hooks = g.hooks
-   if not hooks.lag then
-      hooks.lag = {}
-   end
-   if not hooks.lag[server_name] then
-      hooks.lag[server_name] = {}
-   end
-   if timer_type == "check" then
-      t = t - os.time()
-   elseif timer_type == "refresh" then
-      t = w.config_integer(w.config_get("irc.network.lag_refresh_interval"))
-   end
-
-   hooks.lag[server_name][timer_type] = w.hook_timer(t * 1000, 0, 1,
-                                                     callback or "lag_timer_cb",
-                                                     timer_type..","..server_name)
-   return hooks.lag[server_name][timer_type]
-end
-
-function lag_update_data(server_name)
-   local ptr_server, h_server, buffer = get_irc_server(server_name)
-   if ptr_server ~= "" and buffer then
-      local min_show = w.config_integer(w.config_get("irc.network.lag_min_show"))
-      if w.hdata_integer(h_server, ptr_server, "is_connected") == 0 then
-         buffer.lag = nil
-         return buffer, os.time() - 10, false
-      else
-         local lag = w.hdata_integer(h_server, ptr_server, "lag")
-         buffer.lag = lag >= min_show and lag or nil
-         return buffer, w.hdata_time(h_server, ptr_server, "lag_next_check"), true
-      end
-   end
-   return false
-end
-
-
-function lag_timer_cb(param)
-   local timer_type, server_name = param:match("^([^,]+),(.+)$")
-   if not timer_type or not server_name then
-      return w.WEECHAT_RC_OK
-   end
-   local buffer, next_check, connected = lag_update_data(server_name)
-   if buffer then
-      local cur_time = os.time()
-      local min_show = w.config_integer(w.config_get("irc.network.lag_min_show"))
-      if buffer.lag and buffer.lag >= min_show then
-         lag_set_timer("refresh", server_name)
-      elseif connected then
-         if next_check <= cur_time then
-            local interval = w.config_integer(w.config_get("irc.network.lag_check"))
-            if interval > 0 then
-               next_check = cur_time + interval
-            end
-         end
-         if next_check > cur_time then
-            lag_set_timer("check", server_name, next_check)
-         end
-      end
-      g.hooks.lag[server_name][timer_type] = nil
+   if need_refresh then
       w.bar_item_update(script_name)
    end
-   return w.WEECHAT_RC_OK
 end
 
 function mouse_init()
@@ -1011,7 +931,8 @@ function generate_output()
       char_selection = w.config_string(options.look.char_selection),
       always_show_number = w.config_boolean(options.look.always_show_number),
       format = w.config_string(options.look.format),
-      char_more = w.config_string(options.look.char_more)
+      char_more = w.config_string(options.look.char_more),
+      enable_lag_indicator = w.config_boolean(options.look.enable_lag_indicator)
    }
 
    if o.align_number ~= "none" then
@@ -1098,7 +1019,7 @@ function generate_output()
          items.prefix, colors.prefix = " ", colors.base
       end
 
-      if b.lag then
+      if o.enable_lag_indicator == 1 and b.lag then
          items.lag = string.format("%.3g", b.lag / 1000)
          colors.lag = c.lag
       end
