@@ -487,65 +487,6 @@ function rebuild_cb(_, signal_name, ptr_buffer)
    return w.WEECHAT_RC_OK
 end
 
-function regroup_by_server(own_index, buffer, new_var)
-   local server_buffer
-   if not new_var.type or
-      not new_var.server or
-      buffer.var.server == new_var.server then
-      return
-   end
-   local buffers = g.buffers
-   local server_index
-   if w.buffer_get_string(buffer.pointer, "plugin") == "irc" then
-      server_buffer = w.info_get("irc_buffer", new_var.server)
-      server_index = buffers.pointers[server_buffer]
-   elseif new_var.type == "server" then
-      server_index = own_index
-   else
-      for i, row in ipairs(buffers.list) do
-         if row.var.type == "server" and row.var.server == new_var.server then
-            server_index = i
-            break
-         end
-      end
-   end
-   if not server_index or not buffers.list[server_index] then
-      return
-   end
-   local pos = 0
-   for i = server_index, buffers.total do
-      pos = i
-      if buffers.list[i].var.server ~= new_var.server or
-         buffers.list[i].number > buffer.number then
-         break
-      end
-   end
-   if pos > 0 then
-      if pos == server_index then
-         buffer.rel = ""
-      else
-         if pos ~= own_index then
-            buffers.pointers[buffer.pointer] = pos
-            table.insert(buffers.list, pos, buffer)
-            table.remove(buffers.list, own_index + 1)
-         end
-         local next_buffer, prev_buffer = buffers.list[pos+1], buffers.list[pos-1]
-         if next_buffer and next_buffer.var.server == new_var.server then
-            buffer.rel = "middle"
-         else
-            buffer.rel = "end"
-            if prev_buffer then
-               if prev_buffer.rel == "end" then
-                  prev_buffer.rel = "middle"
-               elseif prev_buffer.rel == "" then
-                  prev_buffer.rel = "start"
-               end
-            end
-         end
-      end
-   end
-end
-
 function localvar_changed_cb(_, signal_name, ptr_buffer)
    local options = g.options
    local buffer, index = get_buffer_by_pointer(ptr_buffer)
@@ -719,19 +660,6 @@ function hotlist_cb()
    update_hotlist()
    w.bar_item_update(script_name)
    return w.WEECHAT_RC_OK
-end
-
-function get_irc_server(server_name)
-   local h_server, buffer = w.hdata_get("irc_server")
-   local ptr_server = w.hdata_search(
-      h_server,
-      w.hdata_get_list(h_server, "irc_servers"),
-      "${irc_server.name} == "..server_name, 1)
-   if ptr_server ~= "" then
-      local ptr_buffer = w.hdata_pointer(h_server, ptr_server, "buffer")
-      buffer = get_buffer_by_pointer(ptr_buffer)
-   end
-   return ptr_server, h_server, buffer
 end
 
 function get_buffer_by_pointer(ptr_buffer)
