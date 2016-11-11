@@ -13,19 +13,18 @@ position).
 
 ## Mouse actions
 
-Currently the mouse bindings are hardcoded.
-
-Button                              | Action
-------------------------------------|--------------------------------
-Left click                          | Switch buffer
-Left button, drag                   | Select buffers
-Right button, drag                  | Deselect buffers
-Ctrl-Right click                    | Clear selection
-Ctrl-Left button, drag within list  | Move buffers
-Ctrl-Left button, drag out of list  | Close buffers
-Middle click                        | Merge buffers
-Ctrl-Middle click                   | Unmerge buffers
-Wheel-up/wheel-down                 | Switch to previous/next buffer
+Button                              | Action                     | hsignal
+------------------------------------|----------------------------|-------------------------------
+Left button                         | Switch buffer              | bufferlist_mouse_switch
+Right                               | Select buffers             | bufferlist_mouse_select
+Ctrl-Right button                   | Deselect buffers           | bufferlist_mouse_deselect
+Alt-Right button                    | Clear selection            | bufferlist_mouse_deselect_all
+Ctrl-Left button, drag within list  | Move buffers               | bufferlist_mouse_move
+Ctrl-Left button, drag into chat    | Close buffers              | bufferlist_mouse_close
+Middle button                       | Merge buffers              | bufferlist_mouse_merge
+Ctrl-Middle button                  | Unmerge buffers            | bufferlist_mouse_unmerge
+Ctrl-Wheel up                       | Switch to previous buffer  | bufferlist_mouse_switch_prev
+Ctrl-Wheel down                     | Switch to previous buffer  | bufferlist_mouse_switch_next
 
 ## Options
 
@@ -127,6 +126,11 @@ Align numbers and indexes.
 Selection marker character. If this option is not empty, buffers won't be
 highlighted when you select them. To see the difference between selected and
 unselected buffers, add item `sel` into option **format**.
+
+#### bufferlist.look.default_mouse_bindings
+
+Set default mouse bindings. Disable this option if you want to set your own mouse
+bindings. See [this table](#mouse-actions) for list of hsignal.
 
 ### Color options
 

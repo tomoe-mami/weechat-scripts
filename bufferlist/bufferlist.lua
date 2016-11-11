@@ -16,18 +16,12 @@ g = {
    bar = {},
    colors = {},
    hooks = {},
-   mouse = {
-      keys = {
-         ["@item("..script_name.."):*"] = "hsignal:"..script_name.."_mouse_event",
-         ["@item("..script_name.."):*-event-*"] = "hsignal:"..script_name.."_mouse_event"
-      }
-   }
 }
 
 function main()
    local reg = w.register(
       script_name, "singalaut <https://github.com/tomoe-mami>",
-      "0.1", "WTFPL", "", "unload_cb", "")
+      "0.2", "WTFPL", "", "unload_cb", "")
 
    if reg then
       local wee_ver = tonumber(w.info_get("version_number", "")) or 0
@@ -41,7 +35,6 @@ function main()
       update_hotlist()
       rebuild_cb(nil, "script_init", w.current_buffer())
       register_hooks()
-      mouse_init()
    end
 end
 
@@ -156,6 +149,12 @@ function config_init()
             default = "",
             desc = "Selection marker character (for item `sel`)",
             change_cb = "redraw_cb"
+         },
+         default_mouse_bindings = {
+            type = "boolean",
+            default = "on",
+            desc = "Set default mouse bindings. Disable this option if you prefer to set mouse bindings manually.",
+            change_cb = "config_mouse_cb"
          }
       }
    }
@@ -248,6 +247,10 @@ function config_init()
    g.config_sections = sections
    g.options = options
 
+   if not g.mouse_bindings then
+      config_mouse_cb(nil, options.look.default_mouse_bindings)
+   end
+
    local cur_val = w.config_string(options.look.bar_name)
    local default = w.config_string_default(options.look.bar_name)
    if cur_val == default then
@@ -320,6 +323,27 @@ function config_bar_cb(_, ptr_opt)
    end
 end
 
+function config_mouse_cb(_, ptr_opt)
+   if w.config_boolean(ptr_opt) == 1 then
+      w.key_bind("mouse", {
+         ["@item("..script_name.."):button1"] = "hsignal:"..script_name.."_mouse_switch",
+         ["@item("..script_name.."):ctrl-wheelup"] = "hsignal:"..script_name.."_mouse_switch_prev",
+         ["@item("..script_name.."):ctrl-wheeldown"] = "hsignal:"..script_name.."_mouse_switch_next",
+         ["@item("..script_name.."):button2-event-*"] = "hsignal:"..script_name.."_mouse_select",
+         ["@item("..script_name.."):ctrl-button2-event-*"] = "hsignal:"..script_name.."_mouse_deselect",
+         ["@item("..script_name.."):alt-button2"] = "hsignal:"..script_name.."_mouse_deselect_all",
+         ["@item("..script_name.."):ctrl-button1-event-drag"] = "hsignal:"..script_name.."_mouse_move",
+         ["@item("..script_name.."):ctrl-button1"] = "hsignal:"..script_name.."_mouse_move",
+         ["@item("..script_name.."):ctrl-button1-gesture-*"] = "hsignal:"..script_name.."_mouse_move",
+         ["@item("..script_name..")>chat:ctrl-button1-gesture-*"] = "hsignal:"..script_name.."_mouse_close",
+         ["@item("..script_name.."):button3"] = "hsignal:"..script_name.."_mouse_merge",
+         ["@item("..script_name.."):ctrl-button3"] = "hsignal:"..script_name.."_mouse_unmerge"
+      })
+      g.mouse_bindings = true
+   end
+   return w.WEECHAT_RC_OK
+end
+
 function register_hooks()
    for _, name in ipairs({
       "buffer_opened", "buffer_hidden", "buffer_unhidden", "buffer_closed",
@@ -340,6 +364,9 @@ function register_hooks()
    w.hook_signal("9000|nicklist_nick_removed", "nicklist_cb", "")
    w.hook_hsignal("9000|nicklist_nick_added", "nicklist_cb", "")
    w.hook_hsignal("9000|nicklist_nick_changed", "nicklist_cb", "")
+
+   w.hook_focus(script_name, "focus_cb", "")
+   w.hook_hsignal(script_name.."_mouse_*", "mouse_event_cb", "")
 
    lag_hooks()
 
@@ -399,12 +426,6 @@ function lag_timer_cb()
    end
 end
 
-function mouse_init()
-   w.hook_focus(script_name, "focus_cb", "")
-   w.hook_hsignal(script_name.."_mouse_event", "mouse_event_cb", "")
-   w.key_bind("mouse", g.mouse.keys)
-end
-
 -- when a mouse event occurred, focus_cb are called first and the returned table will
 -- be passed to mouse_cb
 function focus_cb(_, t)
@@ -412,10 +433,13 @@ function focus_cb(_, t)
       local k1, k2 = t._key:sub(1, -12), t._key:sub(-11)
       if k2 == "-event-down" then
          t.mode, t.key = "init", k1
+         g.mouse_drag = false
       elseif k2 == "-event-drag" then
          t.mode, t.key = "drag", k1
+         g.mouse_drag = true
       else
          t.mode, t.key = "action", t._key
+         g.mouse_drag = nil
       end
       local index = t._bar_item_line + 1
       local buffer = g.buffers.list[index]
@@ -427,51 +451,47 @@ function focus_cb(_, t)
    return t
 end
 
-function mouse_event_cb(_, _, t)
-   if t.mode == "init" then
-      g.mouse.drag = false
-      if t.key == "button1" then
-         return cmd_selection("add", t.pointer)
-      elseif t.key == "button2" then
-         return cmd_selection("delete", t.pointer)
-      end
-   elseif t.mode == "drag" then
-      g.mouse.drag = true
-      if t.key == "button1" then
-         return cmd_selection("add", t.pointer2)
-      elseif t.key == "button2" then
-         return cmd_selection("delete", t.pointer2)
-      elseif t.key == "ctrl-button1" then
-         return cmd_move(t)
-      end
-   else
-      if t.key == "button1" then
-         if not g.mouse.drag then
-            cmd_jump_mouse(t.pointer)
-         end
-      elseif t.key == "ctrl-button2" then
-         cmd_selection("clear")
-      elseif t.key == "button3" then
-         cmd_merge()
-      elseif t.key == "ctrl-button3" then
-         cmd_unmerge()
-      elseif t.key:match("^ctrl%-button1") then
-         if t._bar_name2 ~= w.config_string(g.options.look.bar_name) then
-            cmd_close()
-         end
-         if g.mouse.temp_select then
-            cmd_selection("clear")
-         end
-      elseif t.key == "wheelup" then
-         cmd_jump("", "prev")
-      elseif t.key == "wheeldown" then
-         cmd_jump("", "next")
-      end
-      g.mouse.temp_select = nil
-      g.mouse.last_event = nil
-      g.mouse.drag = nil
+function mouse_event_cb(_, signal, t)
+   signal = signal:sub(#(script_name.."_mouse_") + 1)
+   if not signal or signal == "" then
+      return w.WEECHAT_RC_ERROR
    end
-   return w.WEECHAT_RC_OK
+   local ret
+   if signal == "select" then
+      ret = cmd_selection("add", t.mode == "drag" and t.pointer2 or t.pointer)
+   elseif signal == "deselect" then
+      ret = cmd_selection("delete", t.mode == "drag" and t.pointer2 or t.pointer)
+   elseif signal == "deselect_all" then
+      ret = cmd_selection("clear")
+   elseif signal == "switch" then
+      ret = cmd_jump_mouse(t.pointer)
+   elseif signal == "switch_next" then
+      ret = cmd_jump("", "next")
+   elseif signal == "switch_prev" then
+      ret = cmd_jump("", "prev")
+   elseif signal == "close" then
+      ret = cmd_close()
+      cmd_selection("clear")
+   elseif signal == "move" then
+      ret = cmd_move(t)
+      if t.mode == "action" and g.mouse_temp_select then
+         cmd_selection("clear")
+      end
+   elseif signal == "merge" then
+      ret = cmd_merge()
+   elseif signal == "unmerge" then
+      ret = cmd_unmerge()
+   else
+      print("Unknown action: ${action}", { action = signal })
+      return w.WEECHAT_RC_ERROR
+   end
+
+   if t.mode == "action" then
+      g.mouse_temp_select = nil
+      g.mouse_last_event = nil
+      g.mouse_drag = nil
+   end
+   return ret
 end
 
 function rebuild_cb(_, signal_name, ptr_buffer)
@@ -1190,13 +1210,13 @@ function cmd_move(t)
    if total == 0 then
       cmd_selection("add", t.pointer)
       sel = get_selection()
-      g.mouse.temp_select = true
+      g.mouse_temp_select = true
       total = #sel
    end
 
    local line_start
    if total > 1 then
-      local last = g.mouse.last_event
+      local last = g.mouse_last_event
       if last then
          line_start = tonumber(last._bar_item_line2)
       end
@@ -1227,7 +1247,7 @@ function cmd_move(t)
       w.buffer_set(buffer.pointer, "number", n)
       n = n + p3
    end
-   g.mouse.last_event = t
+   g.mouse_last_event = t
    return w.WEECHAT_RC_OK
 end
 
@@ -1392,9 +1412,6 @@ function item_cb()
 end
 
 function unload_cb()
-   for key, _ in pairs(g.mouse.keys) do
-      w.key_unbind("mouse", key)
-   end
    w.config_write(g.config_file)
    return w.WEECHAT_RC_OK
 end
