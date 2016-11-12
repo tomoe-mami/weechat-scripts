@@ -1062,6 +1062,9 @@ function scroll_bar_area(t)
 end
 
 function autoscroll(mode)
+   if g.mouse_drag then
+      return
+   end
    local bar_name = w.config_string(g.options.look.bar_name)
    local ptr_bar = w.bar_search(bar_name)
    if ptr_bar == "" then
@@ -1144,9 +1147,7 @@ function cmd_selection(param, ptr_buffer)
       if not param or param == "add" then
          sel[ptr_buffer] = true
       elseif param == "delete" then
-         sel[ptr_buffer] = false
-      elseif param == "toggle" then
-         sel[ptr_buffer] = not sel[ptr_buffer]
+         sel[ptr_buffer] = nil
       end
    end
    w.bar_item_update(script_name)
