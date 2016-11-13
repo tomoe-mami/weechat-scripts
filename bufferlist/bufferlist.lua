@@ -478,9 +478,9 @@ function mouse_event_cb(_, signal, t)
          cmd_selection("clear")
       end
    elseif signal == "merge" then
-      ret = cmd_merge()
+      ret = cmd_merge(t)
    elseif signal == "unmerge" then
-      ret = cmd_unmerge()
+      ret = cmd_unmerge(t)
    else
       print("Unknown action: ${action}", { action = signal })
       return w.WEECHAT_RC_ERROR
@@ -1167,25 +1167,24 @@ function cmd_merge()
    return w.WEECHAT_RC_OK
 end
 
-function cmd_unmerge()
+function cmd_unmerge(t)
    local sel = get_selection()
-   local h_buffer = w.hdata_get("buffer")
+   if #sel == 0 then
+      cmd_selection("add", t.pointer)
+      sel = get_selection()
+      g.mouse_temp_select = true
+   end
    for _, buffer in ipairs(sel) do
       if buffer.merged then
-         local zoomed, ptr_other = buffer.zoomed
-         if zoomed then
-            ptr_other = w.hdata_pointer(h_buffer, buffer.pointer, "prev_buffer")
-            if ptr_other == "" or
-               w.hdata_integer(h_buffer, ptr_other, "number") ~= buffer.number then
-               ptr_other = w.hdata_pointer(h_buffer, buffer.pointer, "next_buffer")
-            end
+         if buffer.zoomed then
             w.command(buffer.pointer, "/input zoom_merged_buffer")
          end
          w.buffer_unmerge(buffer.pointer, -1)
-         if zoomed and ptr_other ~= "" then
-            w.command(ptr_other, "/input zoom_merged_buffer")
-         end
       end
+   end
+   if g.mouse_temp_select then
+      cmd_selection("clear")
+      g.mouse_temp_select = false
    end
    return w.WEECHAT_RC_OK
 end
