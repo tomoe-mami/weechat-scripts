@@ -83,6 +83,10 @@ Show hidden buffers.
 
 If enabled, you can use item `lag` in option **format**.
 
+#### bufferlist.look.use_hotlist_color_on_name
+
+Use color of highest hotlist activity on buffer name.
+
 #### bufferlist.look.rel_char_(start|middle|end|none)
 
 Characters that will be displayed in item `rel` for indicating the

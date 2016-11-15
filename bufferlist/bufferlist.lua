@@ -106,6 +106,12 @@ function config_init()
             desc = "Maximum length of buffer name (0 = no limit)",
             change_cb = "rebuild_cb"
          },
+         use_hotlist_color_on_name = {
+            type = "boolean",
+            default = "on",
+            desc = "Use color for highest hotlist activity on buffer name",
+            change_cb = "redraw_cb"
+         },
          align_number = {
             type = "integer",
             default  = "right",
@@ -880,7 +886,8 @@ function generate_output()
       always_show_number = w.config_boolean(options.look.always_show_number),
       format = w.config_string(options.look.format),
       char_more = w.config_string(options.look.char_more),
-      enable_lag_indicator = w.config_boolean(options.look.enable_lag_indicator)
+      enable_lag_indicator = w.config_boolean(options.look.enable_lag_indicator),
+      use_hotlist_color = w.config_boolean(options.look.use_hotlist_color_on_name)
    }
 
    if o.align_number ~= "none" then
@@ -952,7 +959,7 @@ function generate_output()
       end
 
       if not colors.name then
-         colors.name = color_highest_lev or colors.base
+         colors.name = o.use_hotlist_color == 1 and color_highest_lev or colors.base
       end
       colors.hotlist = color_highest_lev
       colors.short_name, colors.full_name = colors.name, colors.name
