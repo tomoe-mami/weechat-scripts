@@ -16,7 +16,7 @@ position).
 Button                              | Action                     | hsignal
 ------------------------------------|----------------------------|-------------------------------
 Left button                         | Switch buffer              | bufferlist_mouse_switch
-Right                               | Select buffers             | bufferlist_mouse_select
+Right button                        | Select buffers             | bufferlist_mouse_select
 Ctrl-Right button                   | Deselect buffers           | bufferlist_mouse_deselect
 Alt-Right button                    | Clear selection            | bufferlist_mouse_deselect_all
 Ctrl-Left button, drag within list  | Move buffers               | bufferlist_mouse_move
@@ -25,6 +25,24 @@ Middle button                       | Merge buffers              | bufferlist_mo
 Ctrl-Middle button                  | Unmerge buffers            | bufferlist_mouse_unmerge
 Ctrl-Wheel up                       | Switch to previous buffer  | bufferlist_mouse_switch_prev
 Ctrl-Wheel down                     | Switch to previous buffer  | bufferlist_mouse_switch_next
+
+You can make custom mouse binding using `/key` command. For example, to close a
+buffer with Alt-Right button:
+
+    /key @item(bufferlist):alt-button2 hsignal:bufferlist_mouse_close
+
+If you want an action performed immediately while you're holding down the button,
+use the `*-event-*` key code instead of `*-gesture-*`. For example, here's the
+default binding for selection using Right button:
+
+    /key @item(bufferlist):button2-event-* hsignal:bufferlist_mouse_select
+
+To run custom commands on selected buffers, you can use the `/bufferlist run`
+command. For example, change title of selected buffers:
+
+    /key @item(bufferlist):ctrl-alt-button1 /bufferlist run /buffer set title foobar
+
+See [Weechat user guide][wee-mouse] for list of mouse key codes.
 
 ## Options
 
@@ -146,3 +164,4 @@ fg/bg options).
 [color]: https://weechat.org/doc/api#_color
 [demo-mouse]: https://streamable.com/7ybq
 [demo-scroll]: https://streamable.com/9u3p
+[wee-mouse]: https://weechat.org/doc/user#mouse_bind_events
