@@ -29,18 +29,18 @@ Ctrl-Wheel down                     | Switch to previous buffer  | bufferlist_mo
 You can make custom mouse binding using `/key` command. For example, to close a
 buffer with Alt-Right button:
 
-    /key @item(bufferlist):alt-button2 hsignal:bufferlist_mouse_close
+    /key bindctxt mouse @item(bufferlist):alt-button2 hsignal:bufferlist_mouse_close
 
 If you want an action performed immediately while you're holding down the button,
 use the `*-event-*` key code instead of `*-gesture-*`. For example, here's the
 default binding for selection using Right button:
 
-    /key @item(bufferlist):button2-event-* hsignal:bufferlist_mouse_select
+    /key bindctxt mouse @item(bufferlist):button2-event-* hsignal:bufferlist_mouse_select
 
 To run custom commands on selected buffers, you can use the `/bufferlist run`
 command. For example, change title of selected buffers:
 
-    /key @item(bufferlist):ctrl-alt-button1 /bufferlist run /buffer set title foobar
+    /key bindctxt mouse @item(bufferlist):ctrl-alt-button1 /bufferlist run /buffer set title foobar
 
 See [Weechat user guide][wee-mouse] for list of mouse key codes.
 
