@@ -554,22 +554,26 @@ function renamed_cb(_, _, ptr_buffer)
 end
 
 function switch_cb(_, _, ptr_buffer)
-   local buffer, index = get_buffer_by_pointer(ptr_buffer)
-   if buffer then
-      local h_buffer = w.hdata_get("buffer")
-      buffer.current = true
-      buffer.displayed = true
-      buffer.active = w.hdata_integer(h_buffer, ptr_buffer, "active")
+   if g.current_index then
       local prev = g.buffers.list[g.current_index]
       if prev then
          prev.current = false
          prev.displayed = w.buffer_get_integer(prev.pointer, "num_displayed") > 0
          prev.active = w.buffer_get_integer(prev.pointer, "active")
       end
-      g.current_index = index
-      w.bar_item_update(script_name)
-      autoscroll("now")
    end
+   local buffer, index = get_buffer_by_pointer(ptr_buffer)
+   if not buffer then
+      g.current_index = nil
+   else
+      local h_buffer = w.hdata_get("buffer")
+      buffer.current = true
+      buffer.displayed = true
+      buffer.active = w.hdata_integer(h_buffer, ptr_buffer, "active")
+      g.current_index = index
+   end
+   w.bar_item_update(script_name)
+   autoscroll("now")
    return w.WEECHAT_RC_OK
 end
 
@@ -577,7 +581,9 @@ function window_cb(_, signal, ptr_win)
    local ptr_buffer = w.window_get_pointer(ptr_win, "buffer")
    local buffer, index = get_buffer_by_pointer(ptr_buffer)
    if buffer then
-      g.buffers.list[g.current_index].current = false
+      if g.current_index then
+         g.buffers.list[g.current_index].current = false
+      end
       if signal == "window_opened" or signal == "window_switch" then
          buffer.displayed = true
          buffer.current = true
@@ -906,7 +912,7 @@ function generate_output()
    if o.char_selection ~= "" then
       sel_phold = string.rep(" ", w.strlen_screen(o.char_selection))
    end
-   local prev_number = 0
+   local prev_number, cur_idx = 0, g.current_index
    for i, b in ipairs(buffers.list) do
       local items = {
          name = b.name,
@@ -919,7 +925,7 @@ function generate_output()
          hotlist = c.delim,
          base = c.normal
       }
-      if b.current then
+      if i == cur_idx then
          colors.base = c.current
       elseif sel[b.pointer] and not sel_phold then
          colors.base = c.selected
@@ -988,7 +994,7 @@ function generate_output()
 
       local entry = replace_format(o.format, items, b.var, colors, o.char_more)
       buffers.list[i].length = w.strlen_screen(entry)
-      if b.current then
+      if i == cur_idx then
          entry = c.current..strip_bg_color(entry)
       end
       table.insert(entries, entry)
@@ -1069,7 +1075,7 @@ function scroll_bar_area(t)
 end
 
 function autoscroll(mode)
-   if g.mouse_drag then
+   if not g.current_index or g.mouse_drag then
       return
    end
    local bar_name = w.config_string(g.options.look.bar_name)
@@ -1270,7 +1276,7 @@ end
 function get_related_buffer(dir, index)
    local buffers = g.buffers
    index = index or g.current_index
-   if not buffers.list[index].rel or buffers.list[index].rel == "" then
+   if not index or not buffers.list[index].rel or buffers.list[index].rel == "" then
       return
    end
    if (dir == "first" and buffers.list[index].rel == "start") or
@@ -1337,6 +1343,9 @@ end
 
 function cmd_jump_normal(param)
    local index, buffers = g.current_index, g.buffers
+   if not index and param == "next" or param == "prev" then
+      return w.WEECHAT_RC_ERROR
+   end
    if type(param) == "number" then
       index = param
    elseif param == "first" then
@@ -1387,6 +1396,9 @@ end
 function cmd_run(ptr_buffer, param)
    local sel = get_selection()
    if #sel == 0 then
+      if not g.current_index then
+         return w.WEECHAT_RC_ERROR
+      end
       table.insert(sel, g.buffers.list[g.current_index])
    end
    for _, buffer in ipairs(sel) do
