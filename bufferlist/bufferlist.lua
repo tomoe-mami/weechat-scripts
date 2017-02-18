@@ -31,7 +31,7 @@ function main()
 
       check_utf8_support()
       config_init()
-      w.bar_item_new(script_name, "item_cb", "")
+      w.bar_item_new(script_name, "generate_output", "")
       update_hotlist()
       rebuild_cb(nil, "script_init", w.current_buffer())
       register_hooks()
@@ -432,8 +432,6 @@ function lag_timer_cb()
    end
 end
 
--- when a mouse event occurred, focus_cb are called first and the returned table will
--- be passed to mouse_cb
 function focus_cb(_, t)
    if t._bar_item_name == script_name then
       local k1, k2 = t._key:sub(1, -12), t._key:sub(-11)
@@ -555,13 +553,19 @@ end
 
 function switch_cb(_, _, ptr_buffer)
    local prev
+   local show_hidden = w.config_boolean(g.options.look.show_hidden_buffers) == 1
    if g.current_index then
       prev = g.buffers.list[g.current_index]
+      if prev and prev.hidden and not show_hidden then
+         return rebuild_cb(nil, "hidden_buffer", prev.pointer)
+      end
    end
    local buffer, index = get_buffer_by_pointer(ptr_buffer)
-   local show_hidden = w.config_boolean(g.options.look.show_hidden_buffers) == 0
-   if (not buffer and show_hidden) or (prev and prev.hidden) then
-      return rebuild_cb(nil, "hidden_buffer", ptr_buffer)
+   if not buffer then
+      g.current_index = nil
+      if not show_hidden then
+         return rebuild_cb(nil, "hidden_buffer", ptr_buffer)
+      end
    else
       buffer.current = true
       buffer.displayed = true
@@ -1428,10 +1432,6 @@ function command_cb(_, ptr_buffer, param)
       return w.WEECHAT_RC_ERROR
    end
    return func(ptr_buffer, param)
-end
-
-function item_cb()
-   return generate_output()
 end
 
 function unload_cb()
