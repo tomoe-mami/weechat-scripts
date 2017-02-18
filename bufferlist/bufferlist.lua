@@ -554,23 +554,24 @@ function renamed_cb(_, _, ptr_buffer)
 end
 
 function switch_cb(_, _, ptr_buffer)
+   local prev
    if g.current_index then
-      local prev = g.buffers.list[g.current_index]
-      if prev then
-         prev.current = false
-         prev.displayed = w.buffer_get_integer(prev.pointer, "num_displayed") > 0
-         prev.active = w.buffer_get_integer(prev.pointer, "active")
-      end
+      prev = g.buffers.list[g.current_index]
    end
    local buffer, index = get_buffer_by_pointer(ptr_buffer)
-   if not buffer then
-      g.current_index = nil
+   local show_hidden = w.config_boolean(g.options.look.show_hidden_buffers) == 0
+   if (not buffer and show_hidden) or (prev and prev.hidden) then
+      return rebuild_cb(nil, "hidden_buffer", ptr_buffer)
    else
-      local h_buffer = w.hdata_get("buffer")
       buffer.current = true
       buffer.displayed = true
-      buffer.active = w.hdata_integer(h_buffer, ptr_buffer, "active")
+      buffer.active = w.buffer_get_integer(ptr_buffer, "active")
       g.current_index = index
+   end
+   if prev then
+      prev.current = false
+      prev.displayed = w.buffer_get_integer(prev.pointer, "num_displayed") > 0
+      prev.active = w.buffer_get_integer(prev.pointer, "active")
    end
    w.bar_item_update(script_name)
    autoscroll("now")
@@ -580,15 +581,17 @@ end
 function window_cb(_, signal, ptr_win)
    local ptr_buffer = w.window_get_pointer(ptr_win, "buffer")
    local buffer, index = get_buffer_by_pointer(ptr_buffer)
-   if buffer then
-      if g.current_index then
-         g.buffers.list[g.current_index].current = false
-      end
+   if not buffer then
+      g.current_index = nil
+   else
       if signal == "window_opened" or signal == "window_switch" then
          buffer.displayed = true
          buffer.current = true
          g.current_index = index
       elseif signal == "window_closed" then
+         if buffer.hidden and w.config_boolean(g.options.look.show_hidden_buffers) == 0 then
+            return rebuild_cb(nil, "hidden_buffer", ptr_buffer)
+         end
          buffer.displayed = w.buffer_get_integer(ptr_buffer, "num_displayed") > 0
          ptr_buffer = w.window_get_pointer(w.current_window(), "buffer")
          buffer, index = get_buffer_by_pointer(ptr_buffer)
@@ -598,9 +601,9 @@ function window_cb(_, signal, ptr_win)
             g.current_index = index
          end
       end
-      w.bar_item_update(script_name)
-      autoscroll("now")
    end
+   w.bar_item_update(script_name)
+   autoscroll("now")
    return w.WEECHAT_RC_OK
 end
 
@@ -722,7 +725,8 @@ function get_buffer_list()
 
    while ptr_buffer ~= "" do
       local is_hidden = w.hdata_integer(h_buffer, ptr_buffer, "hidden") == 1
-      if not is_hidden or o.show_hidden_buffers == 1 then
+      local is_displayed = w.hdata_integer(h_buffer, ptr_buffer, "num_displayed") > 0
+      if not is_hidden or is_displayed or o.show_hidden_buffers == 1 then
          local t = {
             pointer = ptr_buffer,
             number = w.hdata_integer(h_buffer, ptr_buffer, "number"),
@@ -730,7 +734,7 @@ function get_buffer_list()
             active = w.hdata_integer(h_buffer, ptr_buffer, "active"),
             zoomed = w.hdata_integer(h_buffer, ptr_buffer, "zoomed") == 1,
             merged = false,
-            displayed = w.hdata_integer(h_buffer, ptr_buffer, "num_displayed") > 0,
+            displayed = is_displayed,
             current = ptr_buffer == current_buffer,
             var = w.hdata_hashtable(h_buffer, ptr_buffer, "local_variables"),
             rel = ""
