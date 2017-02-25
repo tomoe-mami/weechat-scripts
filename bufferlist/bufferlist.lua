@@ -1351,7 +1351,7 @@ end
 
 function cmd_jump_normal(param)
    local index, buffers = g.current_index, g.buffers
-   if not index and param == "next" or param == "prev" then
+   if not index and (param == "next" or param == "prev") then
       return w.WEECHAT_RC_ERROR
    end
    if type(param) == "number" then
