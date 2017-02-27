@@ -1213,7 +1213,6 @@ function cmd_selection_range(mode, param)
       end
    end
    local step = num1 < num2 and 1 or -1
-   w.print("", ("%q\t%q\t%q"):format(num1, min, num2))
    for i = num1, num2, step do
       if not buffers.list[i] then
          break
