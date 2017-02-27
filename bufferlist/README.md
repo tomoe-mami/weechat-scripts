@@ -44,6 +44,26 @@ command. For example, change title of selected buffers:
 
 See [Weechat user guide][wee-mouse] for list of mouse key codes.
 
+## Command
+
+If you don't like using mouse or cursor mode, the script has `/bufferlist`
+command that you can use in key bindings or entered manually. It only has 4
+functionalities:
+
+- **jump**: Jump/activate a buffer
+- **select**: Add buffers into selection
+- **deselect**: Remove buffers from selection
+- **run**: Evaluate and run Weechat commands on selected buffers.
+
+Other functionality that exists in mouse/cursor mode can be achieved by
+using a combination of **select** and **run**. For example closing multiple
+buffers:
+
+    /bufferlist select 7-16
+    /bufferlist run /buffer close
+
+See `/help bufferlist` for more description.
+
 ## Options
 
 #### bufferlist.look.format

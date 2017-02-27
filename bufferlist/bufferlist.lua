@@ -381,12 +381,23 @@ function register_hooks()
       "Extra helper for bufferlist",
       "jump <index>"..
       " || jump next|prev|first|last [related|unrelated]"..
+      " || select [<range>]"..
+      " || deselect [<range>]"..
       " || run <command>",
-[[
- jump: Jump to buffer based on display position.
-  run: Evaluate and run command on selected buffers. If no buffers are selected, current buffer will be used.
-]],
-      "jump next|prev|first|last related|unrelated || run",
+string.format([[
+     jump: Jump to buffer based on display position.
+   select: Select buffers.
+ deselect: Deselect buffers.
+      run: Evaluate and run command on selected buffers.
+           If no buffers are selected, current buffer will be used.
+  <index>: Index/position of buffer. This is not the same as buffer number where
+           multiple buffers can have the same number. An index is always unique
+           per buffer. You can add variable `index` to %s.look.format to see the
+           index of each buffer.
+  <range>: Range of indexes. Syntax is [<index1>]-[<index2>]. To specify all
+           buffers, use only - without any index.
+]], script_name),
+      "jump next|prev|first|last related|unrelated || run || select || deselect",
       "command_cb", "")
 end
 
@@ -1160,15 +1171,58 @@ function get_selection()
    return t
 end
 
-function cmd_selection(param, ptr_buffer)
-   if param == "clear" then
+function cmd_selection(mode, ptr_buffer)
+   if mode == "clear" then
       g.selection = {}
-   elseif ptr_buffer and ptr_buffer ~= "" then
-      local sel = g.selection
-      if not param or param == "add" then
-         sel[ptr_buffer] = true
-      elseif param == "delete" then
-         sel[ptr_buffer] = nil
+   else
+      if not ptr_buffer then
+         if not g.current_index then
+            return w.WEECHAT_RC_ERROR
+         end
+         local buffer = g.buffers.list[g.current_index]
+         if not buffer then
+            return w.WEECHAT_RC_ERROR
+         end
+         ptr_buffer = buffer.pointer
+      end
+      if mode == "add" then
+         g.selection[ptr_buffer] = true
+      else
+         g.selection[ptr_buffer] = nil
+      end
+   end
+   w.bar_item_update(script_name)
+   return w.WEECHAT_RC_OK
+end
+
+function cmd_selection_range(mode, param)
+   local buffers, sel = g.buffers, g.selection
+   local num1, min, num2 = param:match("^(%d*)(-?)(%d*)")
+   num1, num2 = tonumber(num1), tonumber(num2)
+   if not num1 and not num2 then
+      return cmd_selection(min == "-" and "clear" or mode)
+   else
+      if not num1 then
+         num1 = min == "-" and 1 or g.current_index
+         if not num1 then
+            return w.WEECHAT_RC_ERROR
+         end
+      end
+      if not num2 then
+         num2 = min == "-" and buffers.total or num1
+      end
+   end
+   local step = num1 < num2 and 1 or -1
+   w.print("", ("%q\t%q\t%q"):format(num1, min, num2))
+   for i = num1, num2, step do
+      if not buffers.list[i] then
+         break
+      end
+      local ptr = buffers.list[i].pointer
+      if mode == "add" then
+         sel[ptr] = true
+      else
+         sel[ptr] = nil
       end
    end
    w.bar_item_update(script_name)
@@ -1379,7 +1433,7 @@ function cmd_jump_normal(param)
 
 end
 
-function cmd_jump(ptr_buffer, param)
+function cmd_jump(param)
    local arg1, arg2 = param:match("^(%S+)%s*(%S*)")
    local dirs = { next = true, prev = true, first = true, last = true }
    if not arg1 or not dirs[arg1] then
@@ -1424,14 +1478,17 @@ function command_cb(_, ptr_buffer, param)
    end
    local func
    if cmd == "jump" then
-      func = cmd_jump
+      return cmd_jump(param)
    elseif cmd == "run" then
-      func = cmd_run
+      return cmd_run(ptr_buffer, param)
+   elseif cmd == "select" then
+      return cmd_selection_range("add", param)
+   elseif cmd == "deselect" then
+      return cmd_selection_range("delete", param)
    else
       print("Error: Unknown command: ${cmd}", { cmd = cmd })
       return w.WEECHAT_RC_ERROR
    end
-   return func(ptr_buffer, param)
 end
 
 function unload_cb()
