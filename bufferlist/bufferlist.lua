@@ -1,3 +1,4 @@
+local inspect = require "inspect"
 w, script_name = weechat, "bufferlist"
 
 g = {
@@ -382,22 +383,25 @@ function register_hooks()
       "jump <index>"..
       " || jump next|prev|first|last [related|unrelated]"..
       " || select [<range>]"..
+      " || select if <condition>"..
       " || deselect [<range>]"..
+      " || deselect if <condition>"..
       " || run <command>",
 string.format([[
-     jump: Jump to buffer based on display position.
-   select: Select buffers.
- deselect: Deselect buffers.
-      run: Evaluate and run command on selected buffers.
-           If no buffers are selected, current buffer will be used.
-  <index>: Index/position of buffer. This is not the same as buffer number where
-           multiple buffers can have the same number. An index is always unique
-           per buffer. You can add variable `index` to %s.look.format to see the
-           index of each buffer.
-  <range>: Range of indexes. Syntax is [<index1>]-[<index2>]. To specify all
-           buffers, use only - without any index.
+       jump: Jump to buffer based on display position.
+     select: Select buffers.
+   deselect: Deselect buffers.
+        run: Evaluate and run command on selected buffers.
+             If no buffers are selected, current buffer will be used.
+    <index>: Index/position of buffer. This is not the same as buffer number where
+             multiple buffers can have the same number. An index is always unique
+             per buffer. You can add variable `index` to %s.look.format to see the
+             index of each buffer.
+    <range>: Range of indexes. Syntax is [<index1>]-[<index2>]. To specify all
+             buffers, use only - without any index.
+<condition>: Condition to be evaluated. See /help eval.
 ]], script_name),
-      "jump next|prev|first|last related|unrelated || run || select || deselect",
+      "jump next|prev|first|last related|unrelated || run || select if || deselect if",
       "command_cb", "")
 end
 
@@ -1199,8 +1203,8 @@ function cmd_selection_range(mode, param)
    local buffers, sel = g.buffers, g.selection
    local num1, min, num2 = param:match("^(%d*)(-?)(%d*)")
    num1, num2 = tonumber(num1), tonumber(num2)
-   if not num1 and not num2 then
-      return cmd_selection(min == "-" and "clear" or mode)
+   if not num1 and not num2 and min == "" then
+      return cmd_selection(mode)
    else
       if not num1 then
          num1 = min == "-" and 1 or g.current_index
@@ -1222,6 +1226,42 @@ function cmd_selection_range(mode, param)
          sel[ptr] = true
       else
          sel[ptr] = nil
+      end
+   end
+   w.bar_item_update(script_name)
+   return w.WEECHAT_RC_OK
+end
+
+function cmd_selection_eval(mode, param)
+   local buffers, sel, hotlist = g.buffers, g.selection, g.hotlist
+   local val = mode == "add" and true or nil
+   for i, entry in ipairs(buffers.list) do
+      local vars = {
+         index = i,
+         number = entry.number,
+         zoomed = entry.zoomed and 1 or 0,
+         displayed = entry.displayed and 1 or 0,
+         active = entry.active,
+         merged = entry.merged and 1 or 0,
+         current = entry.current and 1 or 0,
+         rel = entry.rel,
+         prefix = entry.prefix,
+         prefix_color = entry.prefix_color,
+         lag = entry.lag
+      }
+      local hl = hotlist.buffers[entry.pointer]
+      if hl then
+         for _, hl_name in ipairs(hotlist.levels) do
+            vars["hotlist_"..hl_name] = hl[hl_name]
+         end
+      end
+      local result = w.string_eval_expression(
+         param,
+         { buffer = entry.pointer },
+         vars,
+         { type = "condition" })
+      if result == "1" then
+         sel[entry.pointer] = val
       end
    end
    w.bar_item_update(script_name)
@@ -1480,10 +1520,14 @@ function command_cb(_, ptr_buffer, param)
       return cmd_jump(param)
    elseif cmd == "run" then
       return cmd_run(ptr_buffer, param)
-   elseif cmd == "select" then
-      return cmd_selection_range("add", param)
-   elseif cmd == "deselect" then
-      return cmd_selection_range("delete", param)
+   elseif cmd == "select" or cmd == "deselect" then
+      local mode = cmd == "select" and "add" or "delete"
+      local left, right = param:match("^(if) (.+)")
+      if left then
+         return cmd_selection_eval(mode, right)
+      else
+         return cmd_selection_range(mode, param)
+      end
    else
       print("Error: Unknown command: ${cmd}", { cmd = cmd })
       return w.WEECHAT_RC_ERROR

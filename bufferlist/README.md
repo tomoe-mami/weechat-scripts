@@ -55,12 +55,18 @@ functionalities:
 - **deselect**: Remove buffers from selection
 - **run**: Evaluate and run Weechat commands on selected buffers.
 
-Other functionality that exists in mouse/cursor mode can be achieved by
-using a combination of **select** and **run**. For example closing multiple
-buffers:
+Other functionalities can be achieved by using a combination of **select** and
+**run**. For example hiding multiple buffers:
 
     /bufferlist select 7-16
-    /bufferlist run /buffer close
+    /bufferlist run /buffer hide
+
+**select** and **deselect** accepts eval expression to find matching buffers.
+For example select all buffers with message notification count larger than 500
+and clear their notification count:
+
+    /bufferlist select if ${hotlist_message} > 500
+    /bufferlist run /buffer set hotlist -1
 
 See `/help bufferlist` for more description.
 
