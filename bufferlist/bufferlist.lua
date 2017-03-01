@@ -1,4 +1,3 @@
-local inspect = require "inspect"
 w, script_name = weechat, "bufferlist"
 
 g = {
@@ -22,7 +21,8 @@ g = {
 function main()
    local reg = w.register(
       script_name, "singalaut <https://github.com/tomoe-mami>",
-      "0.2", "WTFPL", "", "unload_cb", "")
+      "0.2", "WTFPL",
+      "Show list of buffers in a bar", "unload_cb", "")
 
    if reg then
       local wee_ver = tonumber(w.info_get("version_number", "")) or 0
@@ -175,19 +175,31 @@ function config_init()
             desc = "Color for buffer numbers and indexes",
             change_cb = "config_color_cb"
          },
-         normal = {
+         ["number.current"] = {
+            allow_null = true,
+            desc = "Color for current buffer numbers and indexes",
+            change_cb = "config_color_cb"
+         },
+         ["number.selected"] = {
+            allow_null = true,
+            desc = "Color for selected buffer numbers and indexes",
+            change_cb = "config_color_cb"
+         },
+         default = {
             default = "default,default",
-            desc = "Color for normal buffer entry",
+            desc = "Default color for buffer entry",
             change_cb = "config_color_cb"
          },
-         current = {
+         ["default.current"] = {
             default = "white,red",
-            desc = "Color for current buffer entry",
+            allow_null = true,
+            desc = "Default color for current buffer entry",
             change_cb = "config_color_cb"
          },
-         selected = {
-            default  = "white,blue",
-            desc = "Color of selected buffer",
+         ["default.selected"] = {
+            default = "white,blue",
+            allow_null = true,
+            desc = "Default color for selected buffer entry",
             change_cb = "config_color_cb"
          },
          other_win = {
@@ -207,12 +219,32 @@ function config_init()
          },
          hotlist_low = {
             default = "default",
-            desc = "Color for buffers with hotlist level low (joins, quits, etc)",
+            desc = "Color for hotlist level low (joins, quits, etc)",
+            change_cb = "config_color_cb"
+         },
+         ["hotlist_low.current"] = {
+            allow_null = true,
+            desc = "Color for hotlist level low (joins, quits, etc) of current buffer",
+            change_cb = "config_color_cb"
+         },
+         ["hotlist_low.selected"] = {
+            allow_null = true,
+            desc = "Color for hotlist level low (joins, quits, etc) of selected buffers",
             change_cb = "config_color_cb"
          },
          hotlist_message = {
             default = "cyan",
-            desc = "Color for buffers with hotlist level message (channel conversation)",
+            desc = "Color for hotlist level message (channel conversation)",
+            change_cb = "config_color_cb"
+         },
+         ["hotlist_message.current"] = {
+            allow_null = true,
+            desc = "Color for hotlist level message (channel conversation) of current buffer",
+            change_cb = "config_color_cb"
+         },
+         ["hotlist_message.selected"] = {
+            allow_null = true,
+            desc = "Color for hotlist level message (channel conversation) of selected buffers",
             change_cb = "config_color_cb"
          },
          hotlist_private = {
@@ -220,14 +252,44 @@ function config_init()
             desc = "Color for buffers with hotlist level private",
             change_cb = "config_color_cb"
          },
+         ["hotlist_private.current"] = {
+            allow_null = true,
+            desc = "Color for hotlist level private of current buffer",
+            change_cb = "config_color_cb"
+         },
+         ["hotlist_private.selected"] = {
+            allow_null = true,
+            desc = "Color for hotlist level private of selected buffers",
+            change_cb = "config_color_cb"
+         },
          hotlist_highlight = {
             default  = "lightmagenta",
             desc = "Color for buffers with hotlist level highlight",
             change_cb = "config_color_cb"
          },
+         ["hotlist_highlight.current"] = {
+            allow_null = true,
+            desc = "Color for hotlist level highlight of current buffer",
+            change_cb = "config_color_cb"
+         },
+         ["hotlist_highlight.selected"] = {
+            allow_null = true,
+            desc = "Color for hotlist level highlight of selected buffers",
+            change_cb = "config_color_cb"
+         },
          rel = {
             default = "default",
             desc = "Color for rel chars",
+            change_cb = "config_color_cb"
+         },
+         ["rel.current"] = {
+            allow_null = true,
+            desc = "Color for rel chars of current buffer",
+            change_cb = "config_color_cb"
+         },
+         ["rel.selected"] = {
+            allow_null = true,
+            desc = "Color for rel chars of selected buffers",
             change_cb = "config_color_cb"
          },
          prefix_placeholder = {
@@ -240,9 +302,29 @@ function config_init()
             desc = "Color for delimiter",
             change_cb = "config_color_cb"
          },
+         ["delim.current"] = {
+            allow_null = true,
+            desc = "Color for delimiter of current buffer",
+            change_cb = "config_color_cb"
+         },
+         ["delim.selected"] = {
+            allow_null = true,
+            desc = "Color for delimiter of selected buffers",
+            change_cb = "config_color_cb"
+         },
          lag = {
             default = "default",
             desc = "Color for lag indicator",
+            change_cb = "config_color_cb"
+         },
+         ["lag.current"] = {
+            allow_null = true,
+            desc = "Color for lag indicator of current buffer",
+            change_cb = "config_color_cb"
+         },
+         ["lag.selected"] = {
+            allow_null = true,
+            desc = "Color for lag indicator of selected buffers",
             change_cb = "config_color_cb"
          }
       }
@@ -270,7 +352,9 @@ end
 function config_create_options(data)
    local tb_option = {}
    for name, t in pairs(data.options) do
-      t.default = t.default or ""
+      if not t.default and not t.allow_null then
+         t.default = ""
+      end
       t.value = t.value or t.default
       tb_option[name] = w.config_new_option(
          data.file,
@@ -297,7 +381,11 @@ end
 function config_color_cb(_, ptr_opt)
    local h_opt = w.hdata_get("config_option")
    local name = w.hdata_string(h_opt, ptr_opt, "name")
-   g.colors[name] = w.color(w.config_string(ptr_opt))
+   if w.config_option_is_null(ptr_opt) == 1 then
+      g.colors[name] = nil
+   else
+      g.colors[name] = w.color(w.config_string(ptr_opt))
+   end
    if g.config_loaded then
       redraw_cb()
    end
@@ -902,6 +990,7 @@ function replace_format(fmt, items, vars, colors, char_more)
    end)
 end
 
+
 function generate_output()
    local buffers = g.buffers
    if not buffers.list or not buffers.total or buffers.total < 1 then
@@ -935,29 +1024,44 @@ function generate_output()
    if o.char_selection ~= "" then
       sel_phold = string.rep(" ", w.strlen_screen(o.char_selection))
    end
+
+   local is_current, is_selected = false, false
+   local get_color = function (name)
+      if is_current and c[name..".current"] then
+         return c[name..".current"]
+      elseif is_selected and c[name..".selected"] then
+         return c[name..".selected"]
+      else
+         return c[name]
+      end
+   end
+
    local prev_number, cur_idx = 0, g.current_index
    for i, b in ipairs(buffers.list) do
+      is_current = i == cur_idx
+      is_selected = sel[b.pointer]
       local items = {
          name = b.name,
          short_name = b.short_name,
          full_name = b.full_name
       }
       local colors = {
-         delim = c.delim,
-         rel = c.rel,
-         hotlist = c.delim,
-         base = c.normal
+         delim = get_color("delim"),
+         rel = get_color("rel"),
       }
-      if i == cur_idx then
-         colors.base = c.current
-      elseif sel[b.pointer] and not sel_phold then
-         colors.base = c.selected
+      colors.hotlist = colors.delim
+      if is_current then
+         colors.base = c["default.current"] or c.default
+      elseif is_selected and not sel_phold then
+         colors.base = c["default.selected"] or c.default
       elseif b.displayed and b.active > 0 then
          colors.base = c.other_win
       elseif b.zoomed and b.active == 0 then
-         colors.name = c.out_of_zoom
+         colors.base = c.out_of_zoom
       elseif b.hidden then
-         colors.name = c.hidden
+         colors.base = c.hidden
+      else
+         colors.base = c.default
       end
 
       items.rel = rels[b.rel] or rels.none
@@ -967,7 +1071,8 @@ function generate_output()
       end
       prev_number = b.number
       items.index = idx_fmt and idx_fmt:format(i) or i
-      colors.index, colors.number = c.number, c.number
+      colors.number = get_color("number")
+      colors.index = colors.number
       if num_fmt then
          items.number = num_fmt:format(items.number)
       end
@@ -979,12 +1084,12 @@ function generate_output()
             local lev = hl.levels[k]
             if hotlist[lev] > 0 then
                if not color_highest_lev then
-                  color_highest_lev = c["hotlist_"..lev]
+                  color_highest_lev = get_color("hotlist_"..lev)
                end
-               table.insert(h, c["hotlist_"..lev]..hotlist[lev])
+               table.insert(h, get_color("hotlist_"..lev)..hotlist[lev])
             end
          end
-         items.hotlist = table.concat(h, c.delim..",")
+         items.hotlist = table.concat(h, colors.delim..",")
       end
 
       if not colors.name then
@@ -1005,21 +1110,18 @@ function generate_output()
 
       if o.enable_lag_indicator == 1 and b.lag then
          items.lag = string.format("%.3g", b.lag / 1000)
-         colors.lag = c.lag
+         colors.lag = get_color("lag")
       end
 
       if sel[b.pointer] then
          items.sel = o.char_selection
-         colors.sel = c.selected
+         colors.sel = c["default.selected"]
       elseif sel_phold then
          items.sel = sel_phold
       end
 
       local entry = replace_format(o.format, items, b.var, colors, o.char_more)
       buffers.list[i].length = w.strlen_screen(entry)
-      if i == cur_idx then
-         entry = c.current..strip_bg_color(entry)
-      end
       table.insert(entries, entry)
    end
    return table.concat(entries, "\n")
@@ -1537,23 +1639,6 @@ end
 function unload_cb()
    w.config_write(g.config_file)
    return w.WEECHAT_RC_OK
-end
-
-function strip_bg_color(text)
-   local attr = "[%*!/_|]*"
-   local patterns = {
-      ["\025B%d%d"] = "",
-      ["\025B@%d%d%d%d%d"] = "",
-      ["\025bB"] = "",
-      ["\025%*("..attr..")(%d%d),%d%d"] = "\025F%1%2",
-      ["\025%*("..attr..")(%d%d),@%d%d%d%d%d"] = "\025F%1%2",
-      ["\025%*("..attr..")(@%d%d%d%d%d),%d%d"] = "\025F%1%2",
-      ["\025%*("..attr..")(@%d%d%d%d%d),@%d%d%d%d%d"] = "\025F%1%2"
-   }
-   for p, r in pairs(patterns) do
-      text = text:gsub(p, r)
-   end
-   return text
 end
 
 function module_exists(name)
