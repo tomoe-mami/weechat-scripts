@@ -394,7 +394,9 @@ end
 function config_load_colors(list)
    local colors = {}
    for name, ptr_opt in pairs(list) do
-      colors[name] = w.color(w.config_string(ptr_opt))
+      if w.config_option_is_null(ptr_opt) ~= 1 then
+         colors[name] = w.color(w.config_string(ptr_opt))
+      end
    end
    return colors
 end
@@ -573,9 +575,9 @@ function mouse_event_cb(_, signal, t)
    elseif signal == "switch" then
       ret = cmd_jump_mouse(t.pointer)
    elseif signal == "switch_next" then
-      ret = cmd_jump("", "next")
+      ret = cmd_jump("next")
    elseif signal == "switch_prev" then
-      ret = cmd_jump("", "prev")
+      ret = cmd_jump("prev")
    elseif signal == "close" then
       ret = cmd_close()
       cmd_selection("clear")
