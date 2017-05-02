@@ -1,10 +1,8 @@
 w, script_name = weechat, "bitlbee_completion"
 
 g = {
-   config_buffer = "",
    server = {},
-   hooks = {},
-   queue = {}
+   hooks = {}
 }
 
 function main()
@@ -13,33 +11,30 @@ function main()
       "0.1", "WTFPL", "", "", "")
    if reg_ok then
       init_config()
-      find_buffers()
       w.hook_completion("bitlbee", "", "completion_commands_cb", "")
-      w.hook_signal("irc_channel_opened", "irc_new_buffer_cb", "")
-      w.hook_signal("irc_pv_opened", "irc_new_buffer_cb", "")
       w.hook_signal("irc_server_connected", "irc_connected_cb", "")
-      w.hook_signal("buffer_closing", "buffer_closing_cb", "")
+      w.hook_signal("irc_server_disconnected", "irc_disconnected_cb", "")
    end
 end
 
 function init_config()
-   local value = "irc.localhost.&bitlbee,irc.localhost.root"
+   local value = "localhost:&bitlbee,localhost:root"
    if w.config_is_set_plugin("buffer") == 1 then
       value = w.config_get_plugin("buffer")
    else
       w.config_set_plugin("buffer", value)
       w.config_set_desc_plugin("buffer", [[
-Comma separated list of Bitlbee buffers that will have completion support.
-Wildcard (*) is allowed. Name beginning with ! is excluded.]])
+Comma separated list of Bitlbee channels/queries that will have completion
+support. The syntax of each entry is: server-name:channel-or-query-name
+Wildcard * is allowed. Name beginning with ! is excluded.]])
    end
-   g.config_buffer = value
+
+   config_cb(nil, nil, value)
    w.hook_config("plugins.var.lua."..script_name..".buffer", "config_cb", "")
 
    local comp_template = w.config_string(w.config_get("weechat.completion.default_template"))
    if not comp_template:find("%(bitlbee)", 1, true) then
-      w.print_date_tags(
-         "", 0, "notify_highlight",
-         string.format([[
+      w.print_date_tags("", 0, "notify_highlight", string.format([[
 %s[%s]: Please add %%(bitlbee) to Weechat's default completion template.
 For example:
 
@@ -51,7 +46,14 @@ end
 
 function config_cb(_, _, value)
    g.config_buffer = value
-   find_buffers()
+   local servers = {}
+   for server_name in value:gmatch("([^:,]+):[^,]+") do
+      if server_name:sub(1, 1) ~= "!" and not servers[server_name] then
+         servers[server_name], servers[#servers+1] = true, server_name
+      end
+   end
+   g.config_server = table.concat(servers, ",")
+   init_servers()
    return w.WEECHAT_RC_OK
 end
 
@@ -68,52 +70,40 @@ function unhook_mod(mod_name, server_name)
    end
 end
 
-function find_buffers()
-   local h_buffer = w.hdata_get("buffer")
-   local mask = g.config_buffer
-   local ptr_buffer = w.hdata_get_list(h_buffer, "gui_buffers")
-   while ptr_buffer ~= "" do
-      if w.buffer_get_string(ptr_buffer, "plugin") == "irc" and
-         w.buffer_match_list(ptr_buffer, mask) == 1 then
-         collect_completions(w.buffer_get_string(ptr_buffer, "localvar_server"))
+function init_servers()
+   local h_server = w.hdata_get("irc_server")
+   local mask = g.config_server
+   local ptr_server = w.hdata_get_list(h_server, "irc_servers")
+   while ptr_server ~= "" do
+      local name = w.hdata_string(h_server, ptr_server, "name")
+      local connected = w.hdata_integer(h_server, ptr_server, "is_connected") == 1
+      if connected and name:match_list(mask) then
+         collect_completions(name, w.hdata_pointer(h_server, ptr_server, "buffer"))
       end
-      ptr_buffer = w.hdata_pointer(h_buffer, ptr_buffer, "next_buffer")
+      ptr_server = w.hdata_pointer(h_server, ptr_server, "next_server")
    end
 end
 
-function collect_completions(server_name)
+function collect_completions(server_name, ptr_buffer)
    if not server_name or server_name == "" or g.server[server_name] then
       return
    end
+   if not ptr_buffer or ptr_buffer == "" then
+      ptr_buffer = w.info_get("irc_buffer", server_name)
+      if ptr_buffer == "" then
+         return
+      end
+   end
    g.server[server_name] = {}
-   local ptr_server, is_connected, ptr_buffer = find_server(server_name)
-   if not ptr_server then
-      return
-   end
-   if not is_connected then
-      g.queue[server_name] = true
-   else
-      g.queue[server_name] = nil
-      hook_mod("irc_in_notice", server_name, "comp_notice_cb")
-      hook_mod("irc_in_421", server_name, "err_unknown_cmd_cb")
-      w.command(ptr_buffer, "/quote COMPLETIONS")
-   end
-end
-
-function find_server(name)
-   local h_server = w.hdata_get("irc_server")
-   local ptr_server = w.hdata_search(
-      h_server, w.hdata_get_list(h_server, "irc_servers"),
-      "${irc_server.name} == "..name, 1)
-   if ptr_server and ptr_server ~= "" then
-      return ptr_server,
-             w.hdata_integer(h_server, ptr_server, "is_connected") == 1,
-             w.hdata_pointer(h_server, ptr_server, "buffer")
-   end
+   hook_mod("irc_in_notice", server_name, "comp_notice_cb")
+   hook_mod("irc_in_421", server_name, "err_unknown_cmd_cb")
+   w.command(ptr_buffer, "/quote COMPLETIONS")
 end
 
 function err_unknown_cmd_cb(req_server_name, _, server_name, irc_message)
-   if req_server_name == server_name then
+   -- irc_message_parse doesn't parse numeric replies
+   if req_server_name == server_name and
+      irc_message:match("^%S+%s+421%s+%S+%s+COMPLETIONS.*") then
       unhook_mod("irc_in_421", server_name)
       unhook_mod("irc_in_notice", server_name)
       g.server[server_name] = nil
@@ -170,10 +160,14 @@ function comp_add_command(t, command)
 end
 
 function completion_commands_cb(_, _, ptr_buffer, ptr_comp)
-   if w.buffer_match_list(ptr_buffer, g.config_buffer) == 0 then
+   if w.buffer_get_string(ptr_buffer, "plugin") ~= "irc" then
       return w.WEECHAT_RC_OK
    end
    local server_name = w.buffer_get_string(ptr_buffer, "localvar_server")
+   local channel_name = w.buffer_get_string(ptr_buffer, "localvar_channel")
+   if not string.match_list(server_name..":"..channel_name, g.config_buffer) then
+      return w.WEECHAT_RC_OK
+   end
    local server = g.server[server_name]
    if not server or type(server) ~= "table" or not server.commands then
       return w.WEECHAT_RC_OK
@@ -211,30 +205,36 @@ function completion_commands_cb(_, _, ptr_buffer, ptr_comp)
    return w.WEECHAT_RC_OK
 end
 
-function irc_new_buffer_cb(_, _, ptr_buffer)
-   if w.buffer_match_list(ptr_buffer, g.config_buffer) == 1 then
-      collect_completions(w.buffer_get_string(ptr_buffer, "localvar_server"))
-   end
-   return w.WEECHAT_RC_OK
-end
-
 function irc_connected_cb(_, _, server_name)
-   if g.queue[server_name] then
+   if server_name:match_list(g.config_server) then
       collect_completions(server_name)
    end
    return w.WEECHAT_RC_OK
 end
 
-function buffer_closing_cb(_, _, ptr_buffer)
-   if w.buffer_get_string(ptr_buffer, "plugin") == "irc" and
-      w.buffer_get_string(ptr_buffer, "localvar_type") == "server" then
-      local server_name = w.buffer_get_string(ptr_buffer, "server")
-      if g.server[server_name] then
-         g.server[server_name] = nil
-      end
-      g.queue[server_name] = nil
-   end
+function irc_disconnected_cb(_, _, server_name)
+   unhook_mod("irc_in_notice", server_name)
+   unhook_mod("irc_in_421", server_name)
+   g.server[server_name] = nil
    return w.WEECHAT_RC_OK
+end
+
+function string:match_list(pattern)
+   local result = false
+   for mask in pattern:gmatch("([^,]+)") do
+      local negate = false
+      if mask:sub(1, 1) == "!" then
+         negate, mask = true, mask:sub(2)
+      end
+      if w.string_match(self, mask, 0) == 1 then
+         if negate then
+            result = false
+            break
+         end
+         result = true
+      end
+   end
+   return result
 end
 
 main()
