@@ -53,17 +53,11 @@ end
 function find_server(server_name)
    local h_server = w.hdata_get("irc_server")
    local ptr_server = w.hdata_get_list(h_server, "irc_servers")
-   if type(w.hdata_search) == "function" then
-      return h_server,
-             w.hdata_search(h_server, ptr_server,
-                            "${irc_server.name} == "..server_name, 1)
-   else
-      while ptr_server and ptr_server ~= "" do
-         if w.hdata_string(h_server, ptr_server, "name") == server_name then
-            return h_server, ptr_server
-         end
-         ptr_server = w.hdata_pointer(h_server, ptr_server, "next_server")
+   while ptr_server and ptr_server ~= "" do
+      if w.hdata_string(h_server, ptr_server, "name") == server_name then
+         return h_server, ptr_server
       end
+      ptr_server = w.hdata_pointer(h_server, ptr_server, "next_server")
    end
 end
 

@@ -468,11 +468,15 @@ function quit_server_cb(_, signal, msg)
    local server_name = signal:match("^([^,]+)")
    if server_name then
       local h_server = w.hdata_get("server")
-      local server = w.hdata_search(h_server,
-                                    w.hdata_get_list(h_server, "irc_servers"),
-                                    "${irc_server.name} == "..server_name,
-                                    1)
-      if server ~= "" then
+      local server, found  = w.hdata_get_list(h_server, "irc_servers"), false
+      while server ~= "" do
+         if w.hdata_string(h_server, server, "name") == server_name then
+            found = true
+            break
+         end
+         server = w.hdata_pointer(h_server, server, "next_server")
+      end
+      if found then
          local h_channel = w.hdata_get("irc_channel")
          local channel = w.hdata_pointer(h_server, server, "channels")
          while channel ~= "" do

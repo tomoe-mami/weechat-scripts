@@ -498,10 +498,15 @@ end
 
 function collect_overrides()
    local h_file = w.hdata_get("config_file")
-   local file = w.hdata_search(h_file,
-                               w.hdata_get_list(h_file, "config_files"),
-                               "${config_file.name} == plugins", 1)
-   if not file or file == "" then
+   local file, found = w.hdata_get_list(h_file, file, "config_files"), false
+   while file ~= "" do
+      if w.hdata_string(h_file, file, "name") == "plugins" then
+         found = true
+         break
+      end
+      file = w.hdata_pointer(h_file, file, "next_config")
+   end
+   if not found then
       return
    end
    local section = w.config_search_section(file, "var")
