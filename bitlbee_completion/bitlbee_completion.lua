@@ -8,7 +8,10 @@ g = {
 function main()
    local reg_ok = w.register(
       script_name, "singalaut <https://github.com/tomoe-mami>",
-      "0.1", "WTFPL", "", "", "")
+      "0.1", "WTFPL",
+      "Completion for Bitlbee commands",
+      "", "")
+
    if reg_ok then
       init_config()
       w.hook_completion("bitlbee", "", "completion_commands_cb", "")
@@ -101,13 +104,16 @@ function collect_completions(server_name, ptr_buffer)
 end
 
 function err_unknown_cmd_cb(req_server_name, _, server_name, irc_message)
-   -- irc_message_parse doesn't parse numeric replies
-   if req_server_name == server_name and
-      irc_message:match("^%S+%s+421%s+%S+%s+COMPLETIONS.*") then
-      unhook_mod("irc_in_421", server_name)
-      unhook_mod("irc_in_notice", server_name)
-      g.server[server_name] = nil
-      return ""
+   if req_server_name == server_name then
+      local info = w.info_get_hashtable(
+         "irc_message_parse",
+         { server = server_name, message = irc_message })
+      if info and type(info) == "table" and info.text:match("^COMPLETIONS") then
+         unhook_mod("irc_in_421", server_name)
+         unhook_mod("irc_in_notice", server_name)
+         g.server[server_name] = nil
+         return ""
+      end
    end
    return irc_message
 end
@@ -155,7 +161,7 @@ function comp_add_command(t, command)
       if type(t[left]) ~= "table" then
          t[left] = {}
       end
-      comp_add_command(t[left], right)
+      return comp_add_command(t[left], right)
    end
 end
 
